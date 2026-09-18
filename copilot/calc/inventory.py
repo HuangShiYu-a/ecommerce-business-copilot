@@ -16,6 +16,10 @@ from ..db import query_one
 
 VALID_SALES = ("PAID", "PROCESSING", "SHIPPED", "COMPLETED")
 
+# 有效销售点（不同订单数）下限：低于则视为「销量窗不足」（R_SPARSE_SALES 语义；
+# 生成数据中稀疏≈3、正常≈10、爆款≈29，取 4 区分）
+MIN_SALE_POINTS = 4
+
 
 def resolve_sku(conn, store_id: int, sku_id: int | None = None, sku_code: str | None = None) -> dict | None:
     """store 域内解析 SKU（隔离）。"""
@@ -37,17 +41,23 @@ def config_int(conn, store_id: int, key: str) -> int | None:
     return int(v) if v is not None else None
 
 
-def avg_daily_sales(conn, sku_id: int, store_id: int, window_days: int, as_of: str) -> float:
-    """近 window_days 天有效订单 units / window_days（§12A 状态 + as_of 时钟）。"""
+def sales_summary(conn, sku_id: int, store_id: int, window_days: int, as_of: str) -> dict:
+    """窗口内有效订单的 units 与销售点（不同订单数）计数（§12A 状态 + as_of 时钟）。"""
     row = query_one(conn, """
-        SELECT COALESCE(SUM(oi.quantity), 0) AS units
+        SELECT COALESCE(SUM(oi.quantity), 0) AS units,
+               COUNT(DISTINCT o.id) AS orders
         FROM order_items oi
         JOIN orders o ON o.id = oi.order_id
         WHERE oi.sku_id = %s AND o.store_id = %s
           AND o.status IN %s
           AND o.ordered_at >= (%s::date - make_interval(days => %s))
     """, (sku_id, store_id, VALID_SALES, as_of, window_days))
-    return (row["units"] or 0) / window_days
+    return {"units": row["units"] or 0, "orders": row["orders"] or 0}
+
+
+def avg_daily_sales(conn, sku_id: int, store_id: int, window_days: int, as_of: str) -> float:
+    """近 window_days 天有效订单 units / window_days（§12A 状态 + as_of 时钟）。"""
+    return sales_summary(conn, sku_id, store_id, window_days, as_of)["units"] / window_days
 
 
 def inventory_row(conn, sku_id: int, store_id: int) -> dict | None:
@@ -68,8 +78,9 @@ def restock_recommendation(conn, sku: dict, store_id: int, as_of: str,
         return {"undetermined": "MISSING_LEAD_TIME_CONFIG"}
 
     horizon = horizon_days or (config_int(conn, store_id, "inventory.default_horizon_days") or 14)
-    avg = avg_daily_sales(conn, sku["id"], store_id, horizon, as_of)
-    if avg <= 0:
+    summary = sales_summary(conn, sku["id"], store_id, horizon, as_of)
+    avg = summary["units"] / horizon
+    if summary["orders"] < MIN_SALE_POINTS or avg <= 0:
         return {"undetermined": "MISSING_SALES_WINDOW"}
 
     available = inv["available_qty"]
@@ -95,8 +106,9 @@ def stockout_analysis(conn, sku: dict, store_id: int, as_of: str,
     if inv is None:
         return {"error": "NOT_FOUND"}
     horizon = forecast_days or (config_int(conn, store_id, "inventory.default_horizon_days") or 14)
-    avg = avg_daily_sales(conn, sku["id"], store_id, horizon, as_of)
-    if avg <= 0:
+    summary = sales_summary(conn, sku["id"], store_id, horizon, as_of)
+    avg = summary["units"] / horizon
+    if summary["orders"] < MIN_SALE_POINTS or avg <= 0:
         return {"undetermined": "MISSING_SALES_WINDOW"}
     available = inv["available_qty"]
     days = available / avg if avg > 0 else None

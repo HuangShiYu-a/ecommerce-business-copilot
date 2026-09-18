@@ -57,3 +57,35 @@ def test_sc_runner_route_details():
     assert by_id["SC-OP05-003"]["actual_route"] == "UNDETERMINED"
     assert by_id["SC-OP05-003"]["actual_reason"] == "MISSING_LEAD_TIME_CONFIG"
     assert by_id["SC-OP05-004"]["actual_route"] == "HAS_RECO"
+
+
+# ---- OP-04（T-A-07）----
+
+def test_stockout_sparse_undetermined():
+    res = run_tool("T-A-07", ops_ctx(1), sku_code="SKU_01_SPARSE_SALES_01", forecast_days=14)
+    assert not res.ok
+    assert res.error_code == "DATA_UNAVAILABLE"
+    assert res.error_detail == "MISSING_SALES_WINDOW"
+
+
+def test_stockout_normal_no_risk():
+    res = run_tool("T-A-07", ops_ctx(1), sku_code="SKU_01_NORMAL_01", forecast_days=14)
+    assert res.ok, res
+    assert res.data["risk_level"] == "NORMAL"
+
+
+def test_sc_runner_op04_all_data_sc_pass():
+    report = run_workflow("OP-04")
+    assert report["total"] == 4, report
+    assert report["passed"] == 4, report
+    assert report["gate"] == "PASS"
+
+
+def test_sc_runner_op04_route_details():
+    report = run_workflow("OP-04")
+    by_id = {r["scenario_id"]: r for r in report["results"]}
+    assert by_id["SC-OP04-001"]["actual_route"] == "HAS_RISK"
+    assert by_id["SC-OP04-002"]["actual_route"] == "NO_RISK"
+    assert by_id["SC-OP04-003"]["actual_route"] == "UNDETERMINED"
+    assert by_id["SC-OP04-003"]["actual_reason"] == "MISSING_SALES_WINDOW"
+    assert by_id["SC-OP04-004"]["actual_route"] == "HAS_RISK"

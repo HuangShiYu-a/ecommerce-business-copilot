@@ -1,6 +1,6 @@
 """SC 路由驱动：读 scenarios.yaml，对 data SC 跑对应 Tool，核对 expected_route。
 
-当前覆盖 OP-05（T-R-01 正式结论）；其余 WF 随竖切扩展。
+当前覆盖：OP-05（T-R-01）、OP-04（T-A-07）；其余 WF 随竖切扩展。
 """
 from __future__ import annotations
 
@@ -15,8 +15,32 @@ from .tool import run_tool
 SCENARIOS_PATH = Path(__file__).resolve().parent.parent / "data" / "scenarios" / "eval" / "scenarios.yaml"
 
 
+def _store_id(code: str) -> int:
+    return 2 if code == "STORE_02" else 1
+
+
+def _match(s: dict, route: str, reason: str | None) -> bool:
+    if route != s["expected_route"]:
+        return False
+    if s.get("expected_reason") and reason != s.get("expected_reason"):
+        return False
+    return True
+
+
+def _report(s: dict, route: str, reason: str | None, detail) -> dict:
+    return {
+        "scenario_id": s["scenario_id"],
+        "expected_route": s["expected_route"],
+        "expected_reason": s.get("expected_reason"),
+        "actual_route": route,
+        "actual_reason": reason,
+        "match": _match(s, route, reason),
+        "detail": detail,
+    }
+
+
+# ---- OP-05：T-R-01 → HAS_RECO / NO_RECO / UNDETERMINED ----
 def map_op05(result) -> tuple[str, str | None]:
-    """T-R-01 结果 → route_status（UNDETERMINED 语义：缺事实≠不用补）。"""
     if result.ok:
         return ("HAS_RECO" if result.data.get("recommended_quantity", 0) > 0 else "NO_RECO"), None
     if result.error_code == "DATA_UNAVAILABLE":
@@ -25,30 +49,41 @@ def map_op05(result) -> tuple[str, str | None]:
 
 
 def run_op05(s: dict, conn) -> dict:
-    ctx = ops_ctx(2 if s["store_id"] == "STORE_02" else 1)
-    res = run_tool("T-R-01", ctx, conn=conn, sku_code=s["sku_ids"][0])
+    res = run_tool("T-R-01", ops_ctx(_store_id(s["store_id"])), conn=conn,
+                   sku_code=s["sku_ids"][0])
     route, reason = map_op05(res)
-    match = route == s["expected_route"]
-    if s.get("expected_reason") and reason != s.get("expected_reason"):
-        match = False
-    return {
-        "scenario_id": s["scenario_id"],
-        "expected_route": s["expected_route"],
-        "expected_reason": s.get("expected_reason"),
-        "actual_route": route,
-        "actual_reason": reason,
-        "match": match,
-        "detail": res.data or {"error": res.error_detail},
-    }
+    return _report(s, route, reason, res.data or {"error": res.error_detail})
+
+
+# ---- OP-04：T-A-07 → HAS_RISK / NO_RISK / UNDETERMINED ----
+def map_op04(result) -> tuple[str, str | None]:
+    if result.ok:
+        return ("HAS_RISK" if result.data.get("risk_level") == "HIGH" else "NO_RISK"), None
+    if result.error_code == "DATA_UNAVAILABLE":
+        return "UNDETERMINED", result.error_detail
+    return f"ERROR({result.error_code})", result.error_detail
+
+
+def run_op04(s: dict, conn) -> dict:
+    res = run_tool("T-A-07", ops_ctx(_store_id(s["store_id"])), conn=conn,
+                   sku_code=s["sku_ids"][0], forecast_days=s.get("input_scope", {}).get("horizon_days"))
+    route, reason = map_op04(res)
+    return _report(s, route, reason, res.data or {"error": res.error_detail})
+
+
+RUNNERS = {"OP-05": run_op05, "OP-04": run_op04}
 
 
 def run_workflow(workflow: str = "OP-05") -> dict:
+    runner = RUNNERS.get(workflow)
+    if runner is None:
+        raise ValueError(f"未实现的 workflow runner: {workflow}")
     payload = yaml.safe_load(SCENARIOS_PATH.read_text(encoding="utf-8"))
     scs = [s for s in payload["scenarios"]
            if s["workflow"] == workflow and s["nature"] == "data"]
     conn = connect()
     try:
-        results = [run_op05(s, conn) for s in scs]
+        results = [runner(s, conn) for s in scs]
     finally:
         conn.close()
     passed = sum(1 for r in results if r["match"])
