@@ -1,0 +1,19 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+
+# Env / secrets
+.env
+.env.*
+.venv/
+
+# Generated data（S3 输出，可再生成）
+data/generated/*
+!data/generated/.gitkeep
+
+# Editors / OS
+.idea/
+.vscode/
+.DS_Store

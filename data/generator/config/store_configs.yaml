@@ -1,0 +1,18 @@
+# StoreConfig 默认值（S2 §5，用户已采纳）。
+# STORE_01 全量 9 key；STORE_02 删除 deficient_keys_store02 中的 key（缺配置 SC-OP05-003/OP-08-003）。
+# 数值只进 StoreConfig，不写进 RAG 正文。config_value 序列化为 JSONB。
+defaults:
+  inventory.lead_time_days: 7
+  inventory.default_horizon_days: 14
+  inventory.slow_moving.lookback_days: 30
+  inventory.slow_moving.max_units: 15
+  health.weights: { sales: 0.3, inventory: 0.2, margin: 0.2, return: 0.2, feedback: 0.1 }
+  health.core_dimensions: [sales, inventory, margin, return, feedback]
+  health.optional_dimensions: [traffic]
+  anomaly.baseline_mode: wow
+  anomaly.sales_drop_threshold: 0.30
+
+# STORE_02（缺配置测试店）从 defaults 中移除的 key
+deficient_keys_store02:
+  - inventory.lead_time_days
+  - anomaly.sales_drop_threshold

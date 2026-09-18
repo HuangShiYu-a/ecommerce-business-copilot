@@ -1,0 +1,41 @@
+# Generator profiles 规模初值（S2 §2）。seed / as_of 全 profile 共用；改 seed = 新世界。
+# dev / eval 同一生成规则与 seed；full 后置，不阻塞 S3 首版。
+dataset:
+  seed: 42
+  as_of_date: "2026-09-17"     # 分析「今天」；DOI/缺货/period 均相对此日
+  timeline_start: "2026-06-19"  # as_of 前满 90 天（含当日）
+  timezone: "Asia/Shanghai"     # 逻辑时区；存储用 UTC，按店本地解释（决策点 5）
+
+profiles:
+  dev:                       # 日常重生成 / 联调
+    stores: 2
+    categories: 8
+    products_per_store: 40
+    skus_per_store: 80
+    customers_per_store: 200
+    warehouses_per_store: 1
+    staff: { customer_service: 2, operations: 2, approver: 1 }
+    orders_total_approx: 3000    # 全店合计约 1500–3000
+    days_back: 90
+
+  eval:                      # 黄金 Scenario（同 dev 规则与 seed；规模可小于 dev）
+    stores: 2
+    categories: 8
+    products_per_store: null     # 覆盖全部 SC 所需即可（S3.1 精化）
+    skus_per_store: null
+    customers_per_store: null
+    warehouses_per_store: 1
+    staff: { customer_service: 2, operations: 2, approver: 1 }
+    orders_total_approx: null    # 够支撑 SC 时间线（S3.1 精化）
+    days_back: 90
+
+  full:                      # 后置，不阻塞 S3 首版（S2 §2）
+    stores: 2
+    categories: 10
+    products_per_store: 200
+    skus_per_store: 400
+    customers_per_store: 1500
+    warehouses_per_store: 2
+    staff: null
+    orders_total_approx: null    # 30k–80k 量级另议
+    days_back: 90

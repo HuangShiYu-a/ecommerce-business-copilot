@@ -1,0 +1,40 @@
+---
+description: AI Collaboration Contract — roles, decision ownership, teaching/implement modes
+alwaysApply: true
+---
+
+# Collaboration Contract (always on)
+
+Read and follow the full contract in [`AGENTS.md`](AGENTS.md) at the repository root.
+
+## Non-negotiables
+
+1. **User is the decision maker** for business scope, core architecture, Tool boundaries, risk/HITL, DB/RAG/workflow strategy, and changes to frozen baselines under `docs/`.
+2. **AI may teach, critique, propose 2–3 options, and recommend** — but must **not silently decide or rewrite** core architecture or baseline docs.
+3. If the user **doesn't know how to design** something: enter **Teaching / Candidate mode** (explain → options → recommend → wait for user choice). Do **not** block with “give me a full design first.”
+4. **Implement only after user approval** of the approach. Then: small verifiable steps, no scope creep, report what changed and how to validate.
+5. On conflict with Business / Tool / Database contracts: **stop**, explain, propose alternatives, wait — never quietly edit upstream specs.
+6. Do **not** start large RAG/Workflow design or broad coding unless the user asks; prefer Walkthrough / vertical slices when learning.
+7. AI **may write substantial implementation code** after approval; user contribution is design judgment + validation + ability to explain Why — not line-count theater.
+
+## Frozen baselines
+
+- `docs/business-scenarios-v1.md`（V1.1 已定稿）
+- `docs/core-tool-design-v1.md`（**V1.1 Frozen**）
+- `docs/database-design-v1.md`（**V1.2.3 Frozen**）
+- `docs/rag-design-v0.2.md`（Knowledge/RAG **V1.0 Frozen**；文件名历史保留）
+- `docs/workflow-design-spec-v1.md`（**V1.0 Frozen**）
+- `docs/workflow-cs08-09-v1.md`（**V1.0.1 Frozen**）
+- `docs/workflow-cs06-v1.md`（**V1.0.1 Frozen**）
+- `docs/workflow-ops-p0-v1.md`（**V1.0.2 Frozen**）
+- `docs/workflow-cross-review-v1.md`（**V1.0.1 Frozen**）
+
+## Data Phase（非 Frozen 基线）
+
+- `docs/data-requirements-v1.md`（S1 Dataset Matrix **V1.0.2**）
+- `docs/synthetic-data-design-v1.md`（S2 Synthetic Design **V1.0.5**，已批准为 Generator 说明书）
+- `docs/s3-generator-plan-v1.md`（S3 Generator 实施规划 V1.1，已实施完成）
+
+## Project snapshot (index only)
+
+Internal CS + Ops Copilot (not C-end chatbot). One Agent + routing. Tools: Query / Analysis / Knowledge / Recommendation / Action. PostgreSQL facts + pgvector rules. HITL for high-risk writes. Full snapshot: `AGENTS.md` §1.1 — details always win from `docs/`.

@@ -1,0 +1,28 @@
+# 8 类目（S2 §6.1，用户 2026-09-18 采纳；P2 与 Knowledge 共享契约）
+# code = 生成器内部稳定标识（DB product_categories 无 code 列，只存 name）；
+# Knowledge 侧 KD-AS-02 / KD-OP-01 按 code 引用。
+categories:
+  - code: customized
+    name: 定制类
+    return_rule: legal_non_returnable   # 法定不可退（消保法 §25）
+  - code: fresh
+    name: 食品/生鲜
+    return_rule: legal_non_returnable   # 法定不可退（鲜活易腐）
+  - code: electronics
+    name: 数码/电子
+    return_rule: returnable_with_depreciation
+  - code: beauty
+    name: 美妆/个护
+    return_rule: platform_non_returnable_unsealed
+  - code: apparel
+    name: 服装/服饰
+    return_rule: returnable_general
+  - code: home
+    name: 家居/家纺
+    return_rule: returnable_general
+  - code: books
+    name: 图书/音像
+    return_rule: partial_non_returnable  # 音像/期刊拆封不可退
+  - code: baby
+    name: 母婴/玩具
+    return_rule: returnable_with_safety

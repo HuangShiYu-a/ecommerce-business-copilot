@@ -1,0 +1,68 @@
+# knowledge/seed manifest — 治理/扩展字段（非 DB 列；K3 §6）
+# source_type / source_uri 已写在各篇 front matter，不在此重复。
+# 导入器忽略未知字段。
+documents:
+  - doc_id: KD-AS-01
+    source_title: "中华人民共和国消费者权益保护法（2013年修正）"
+    retrieved_at: "2026-09-18"
+    author: "user"
+    reviewed_by: "user"
+    notes: |
+      official 忠实摘要（非法律意见）；主要锚点：第二十五条。
+      补充官方依据（实施规则）：《网络购买商品七日无理由退货暂行办法》 https://www.samr.gov.cn/zw/zfxxgk/fdzdgknr/fgs/art/2023/art_26ca8fe29e184edd899fa0a7a060d935.html
+      备用归档（同办法官方 PDF）：https://sjfg.samr.gov.cn/law/file/pdf/3235243/1663578568290.pdf
+      现实备注：2024-07-01 施行的《消费者权益保护法实施条例》为细化条例，非本 V1 seed 范围。
+  - doc_id: KD-AS-02
+    source_title: null
+    retrieved_at: "2026-09-18"
+    author: "user"
+    reviewed_by: "user"
+    notes: "平台补充不可退：beauty / books音像 / apparel贴身衣物(apparel-intimate)；electronics 有条件可退"
+  - doc_id: KD-AS-03
+    source_title: null
+    retrieved_at: "2026-09-18"
+    author: "user"
+    reviewed_by: "user"
+    notes: "完好标准 + 凭证简化 + 赠品；法定不可退类目不适用"
+  - doc_id: KD-AS-04
+    source_title: null
+    retrieved_at: "2026-09-18"
+    author: "user"
+    reviewed_by: "user"
+    notes: "R3 载体（electronics 耳机类店规）；店窗口 7 日；scope exclude apparel-conflict-test（K3 §5 互斥）"
+  - doc_id: KD-LG-01
+    source_title: null
+    retrieved_at: "2026-09-18"
+    author: "user"
+    reviewed_by: "user"
+    notes: "无数值写法：时效以订单承诺为准；延误/异常文字规则"
+  - doc_id: KD-OP-01
+    source_title: null
+    retrieved_at: "2026-09-18"
+    author: "user"
+    reviewed_by: "user"
+    notes: "五核心维说明 + traffic 恒缺 + margin 口径；类目例外 fresh/baby"
+  - doc_id: KD-INV-01
+    source_title: null
+    retrieved_at: "2026-09-18"
+    author: "user"
+    reviewed_by: "user"
+    notes: "备货原则文字（无数值）；补货确认流程"
+  - doc_id: KD-AS-EXP-01
+    source_title: null
+    retrieved_at: "2026-09-18"
+    author: "user"
+    reviewed_by: "user"
+    notes: "eval 夹具：effective_to=2026-08-31（已过期），测生命周期过滤（R1 时间分支）"
+  - doc_id: KD-AS-CONF-01
+    source_title: null
+    retrieved_at: "2026-09-18"
+    author: "user"
+    reviewed_by: "user"
+    notes: "eval 夹具：SC-CS08-007 冲突对 A（7 日窗口）；scope include apparel-conflict-test"
+  - doc_id: KD-AS-CONF-02
+    source_title: null
+    retrieved_at: "2026-09-18"
+    author: "user"
+    reviewed_by: "user"
+    notes: "eval 夹具：SC-CS08-007 冲突对 B（15 日窗口）；scope include apparel-conflict-test"

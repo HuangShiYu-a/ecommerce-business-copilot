@@ -1,0 +1,62 @@
+# 13 个 SKU 角色 → 生成参数初值（S2 §6 + 决策点 3：S3.1 预置，S3.2 校验调参）
+# 角色是生成标签，不是业务风险结论列；真实 risk 由 Tool/Calculation 计算（S2 红线）。
+# 单位：daily_units 为「近 window_days 天日均 units」的生成目标区间；available_class 为库存叙事。
+roles:
+  R_HOT:
+    label: 爆款
+    sales: { window_days: 30, daily_units_min: 5, daily_units_max: 20, pattern: steady_high }
+    inventory: { available_class: high, safety_stock: 30 }
+  R_NORMAL:
+    label: 正常
+    sales: { window_days: 30, daily_units_min: 1, daily_units_max: 4, pattern: steady }
+    inventory: { available_class: medium, safety_stock: 10 }
+  R_SLOW:
+    label: 慢销
+    sales: { window_days: 30, daily_units_min: 0, daily_units_max: 0.5, pattern: flat_low }
+    inventory: { available_class: high, safety_stock: 5 }
+  R_SLOW_HEALTHY:
+    label: 慢销但利润好
+    sales: { window_days: 30, daily_units_min: 0, daily_units_max: 0.5, pattern: flat_low }
+    inventory: { available_class: low, safety_stock: 5 }
+    special: { has_cost: true, high_margin: true }
+  R_STOCKOUT:
+    label: 将缺货
+    sales: { window_days: 14, daily_units_min: 3, daily_units_max: 8, pattern: steady_high }
+    inventory: { available_class: very_low, safety_stock: 10 }
+  R_OVERSTOCK:
+    label: 积压向
+    sales: { window_days: 30, daily_units_min: 0, daily_units_max: 0.3, pattern: flat_low }
+    inventory: { available_class: overstock, safety_stock: 5 }
+  R_RETURN_HIGH:
+    label: 高退货
+    sales: { window_days: 30, daily_units_min: 1, daily_units_max: 4, pattern: steady }
+    inventory: { available_class: medium, safety_stock: 10 }
+    special: { return_rate: high }
+  R_PRICE_DROP:
+    label: 近期降价
+    sales: { window_days: 30, daily_units_min: 1, daily_units_max: 5, pattern: drop_after }
+    inventory: { available_class: medium, safety_stock: 10 }
+    special: { price_drop_before_days: [7, 14] }
+  R_ANOMALY_DROP:
+    label: 销量骤降
+    sales: { window_days: 30, daily_units_min: 1, daily_units_max: 5, pattern: spike_then_drop }
+    inventory: { available_class: medium, safety_stock: 10 }
+    special: { drop_window_days: 7, drop_ratio: 0.3 }
+  R_SPARSE_SALES:
+    label: 销量稀疏
+    sales: { window_days: 30, daily_units_min: 0, daily_units_max: 0.1, pattern: sparse }
+    inventory: { available_class: any, safety_stock: 5 }
+  R_HEALTH_FULL:
+    label: 健康五核心齐
+    sales: { window_days: 30, daily_units_min: 1, daily_units_max: 4, pattern: steady }
+    inventory: { available_class: medium, safety_stock: 10 }
+    special: { has_cost: true, has_feedback: true, has_return: true }
+  R_HEALTH_CORE_MISS:
+    label: 缺核心维
+    sales: { window_days: 30, daily_units_min: 1, daily_units_max: 4, pattern: steady }
+    inventory: { available_class: medium, safety_stock: 10 }
+    special: { missing_dimension: margin }   # 无 cost → margin 维缺失
+  R_BASELINE:
+    label: 全能正常
+    sales: { window_days: 30, daily_units_min: 1, daily_units_max: 3, pattern: steady }
+    inventory: { available_class: medium, safety_stock: 10 }

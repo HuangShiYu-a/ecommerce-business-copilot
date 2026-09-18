@@ -1,0 +1,7 @@
+# E-commerce Business Copilot — 数据生成器（S3）依赖
+# P1 / S3.0 运行只需 pyyaml + pytest；pandas/pyarrow 在 S3.1 写 canonical 表时启用。
+pyyaml>=6.0
+pytest>=8.0
+pandas>=2.0
+pyarrow>=14.0
+pydantic>=2.0

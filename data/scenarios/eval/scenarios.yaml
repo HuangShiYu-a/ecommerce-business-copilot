@@ -1,0 +1,458 @@
+dataset:
+  seed: 42
+  as_of_date: '2026-09-17'
+  profile: dev
+scenarios:
+- scenario_id: SC-CS06-001
+  workflow: CS-06
+  nature: data
+  description: 按时送达、事件完整
+  store_id: STORE_01
+  sku_ids: []
+  order_no: ORD_01_000003
+  input_scope: {}
+  trigger_type: ON_TIME_DELIVERY
+  expected_route: NORMAL
+  expected_reason: null
+  expected_formal_result: {}
+  remarks: ''
+- scenario_id: SC-CS06-002
+  workflow: CS-06
+  nature: data
+  description: 超 promised 未按时送达
+  store_id: STORE_01
+  sku_ids: []
+  order_no: ORD_01_000004
+  input_scope: {}
+  trigger_type: PAST_PROMISED
+  expected_route: ANOMALY
+  expected_reason: null
+  expected_formal_result: {}
+  remarks: ''
+- scenario_id: SC-CS06-003
+  workflow: CS-06
+  nature: data
+  description: 缺 promised_delivery_at
+  store_id: STORE_01
+  sku_ids: []
+  order_no: ORD_01_000044
+  input_scope: {}
+  trigger_type: MISSING_PROMISED_AT
+  expected_route: UNDETERMINED
+  expected_reason: MISSING_PROMISED_AT
+  expected_formal_result: {}
+  remarks: ''
+- scenario_id: SC-CS06-004
+  workflow: CS-06
+  nature: runtime_eval
+  description: 数据可造延误单；评测 mock Knowledge 不可用仍出分析
+  store_id: STORE_01
+  sku_ids: []
+  order_no: ORD_01_000002
+  input_scope: {}
+  trigger_type: DELAY_THEN_KNOWLEDGE_DOWN
+  expected_route: ANOMALY
+  expected_reason: null
+  expected_formal_result: {}
+  remarks: 'runtime: mock search_business_knowledge 不可用，断言归 S4/harness'
+- scenario_id: SC-CS08-001
+  workflow: CS-08
+  nature: data
+  description: 可退类目、签收在窗口内
+  store_id: STORE_01
+  sku_ids: []
+  order_no: ORD_01_000439
+  input_scope: {}
+  trigger_type: WITHIN_WINDOW
+  expected_route: eligible
+  expected_reason: null
+  expected_formal_result: {}
+  remarks: ''
+- scenario_id: SC-CS08-002
+  workflow: CS-08
+  nature: data
+  description: 可退类目、窗口已过
+  store_id: STORE_01
+  sku_ids: []
+  order_no: ORD_01_000427
+  input_scope: {}
+  trigger_type: WINDOW_EXPIRED
+  expected_route: ineligible
+  expected_reason: null
+  expected_formal_result: {}
+  remarks: ''
+- scenario_id: SC-CS08-003
+  workflow: CS-08
+  nature: data
+  description: 已送达未签收
+  store_id: STORE_01
+  sku_ids: []
+  order_no: ORD_01_000016
+  input_scope: {}
+  trigger_type: MISSING_SIGNED_AT
+  expected_route: undetermined
+  expected_reason: MISSING_SIGNED_AT
+  expected_formal_result: {}
+  remarks: ''
+- scenario_id: SC-CS08-004
+  workflow: CS-08
+  nature: runtime_eval
+  description: 前置 eligible；评测停在 Confirmation 取消
+  store_id: STORE_01
+  sku_ids: []
+  order_no: ORD_01_000439
+  input_scope: {}
+  trigger_type: CONFIRM_CANCEL
+  expected_route: eligible
+  expected_reason: null
+  expected_formal_result: {}
+  remarks: 'runtime: HITL Confirmation 取消，归 S4/harness'
+- scenario_id: SC-CS08-005
+  workflow: CS-08
+  nature: runtime_eval
+  description: 前置 eligible；评测审批拒绝
+  store_id: STORE_01
+  sku_ids: []
+  order_no: ORD_01_000439
+  input_scope: {}
+  trigger_type: APPROVAL_REJECT
+  expected_route: eligible
+  expected_reason: null
+  expected_formal_result: {}
+  remarks: 'runtime: HITL Approval 拒绝，归 S4/harness'
+- scenario_id: SC-CS08-006
+  workflow: CS-08
+  nature: data
+  description: 预置已成功售后作对照（无路由断言）
+  store_id: STORE_01
+  sku_ids: []
+  order_no: ORD_01_000004
+  input_scope: {}
+  trigger_type: PREEXISTING_AFTERSALES
+  expected_route: null
+  expected_reason: null
+  expected_formal_result: {}
+  remarks: 对照数据：该订单存在 after_sales_requests status=COMPLETED/APPROVED
+- scenario_id: SC-CS08-007
+  workflow: CS-08
+  nature: runtime_eval
+  description: conflict 产品签收在第 10 天；CONF-01(7日)/CONF-02(15日) 矛盾
+  store_id: STORE_01
+  sku_ids: []
+  order_no: ORD_01_CS0807_001
+  input_scope: {}
+  trigger_type: RULE_CONFLICT
+  expected_route: undetermined
+  expected_reason: RULE_CONFLICT
+  expected_formal_result: {}
+  remarks: 'runtime: R1-R5 消解服务在 S4/harness 断言 RULE_CONFLICT（resolution-service-dependent）'
+- scenario_id: SC-OP03-001
+  workflow: OP-03
+  nature: data
+  description: R_SLOW 慢销候选
+  store_id: STORE_01
+  sku_ids:
+  - SKU_01_SLOW_01
+  order_no: ''
+  input_scope: {}
+  trigger_type: SLOW_MOVING
+  expected_route: HAS_CANDIDATES
+  expected_reason: null
+  expected_formal_result: {}
+  remarks: ''
+- scenario_id: SC-OP03-002
+  workflow: OP-03
+  nature: data
+  description: beauty 类目内无慢销
+  store_id: STORE_01
+  sku_ids: []
+  order_no: ''
+  input_scope:
+    category: beauty
+  trigger_type: NO_SLOW_IN_SCOPE
+  expected_route: EMPTY
+  expected_reason: null
+  expected_formal_result: {}
+  remarks: ''
+- scenario_id: SC-OP03-003
+  workflow: OP-03
+  nature: data
+  description: 慢销但健康；勿等同滞销风险等级
+  store_id: STORE_01
+  sku_ids:
+  - SKU_01_SLOW_HEALTHY_01
+  order_no: ''
+  input_scope: {}
+  trigger_type: SLOW_WITH_HEALTH
+  expected_route: HAS_CANDIDATES
+  expected_reason: null
+  expected_formal_result: {}
+  remarks: ''
+- scenario_id: SC-OP03-004
+  workflow: OP-03
+  nature: runtime_eval
+  description: ''
+  store_id: STORE_01
+  sku_ids: []
+  order_no: ''
+  input_scope: {}
+  trigger_type: PERF_QUERY_FAIL
+  expected_route: UNDETERMINED
+  expected_reason: PERF_QUERY_FAIL
+  expected_formal_result: {}
+  remarks: 'runtime: 故障注入或数据不足二选一，归 S4/harness'
+- scenario_id: SC-OP04-001
+  workflow: OP-04
+  nature: data
+  description: R_STOCKOUT
+  store_id: STORE_01
+  sku_ids:
+  - SKU_01_STOCKOUT_01
+  order_no: ''
+  input_scope:
+    horizon_days: 14
+  trigger_type: LOW_STOCK_HIGH_SALES
+  expected_route: HAS_RISK
+  expected_reason: null
+  expected_formal_result: {}
+  remarks: ''
+- scenario_id: SC-OP04-002
+  workflow: OP-04
+  nature: data
+  description: R_NORMAL 健康 DOI
+  store_id: STORE_01
+  sku_ids:
+  - SKU_01_NORMAL_01
+  order_no: ''
+  input_scope: {}
+  trigger_type: HEALTHY_DOI
+  expected_route: NO_RISK
+  expected_reason: null
+  expected_formal_result: {}
+  remarks: ''
+- scenario_id: SC-OP04-003
+  workflow: OP-04
+  nature: data
+  description: R_SPARSE_SALES 销量窗不足
+  store_id: STORE_01
+  sku_ids:
+  - SKU_01_SPARSE_SALES_01
+  order_no: ''
+  input_scope: {}
+  trigger_type: MISSING_SALES_WINDOW
+  expected_route: UNDETERMINED
+  expected_reason: MISSING_SALES_WINDOW
+  expected_formal_result: {}
+  remarks: ''
+- scenario_id: SC-OP04-004
+  workflow: OP-04
+  nature: data
+  description: 同 001；metadata handoff_to OP-05
+  store_id: STORE_01
+  sku_ids:
+  - SKU_01_STOCKOUT_01
+  order_no: ''
+  input_scope: {}
+  trigger_type: LOW_STOCK_HIGH_SALES
+  expected_route: HAS_RISK
+  expected_reason: null
+  expected_formal_result: {}
+  remarks: 'metadata: handoff_to=OP-05（移交为 WF 行为，非数据构造）'
+- scenario_id: SC-OP05-001
+  workflow: OP-05
+  nature: data
+  description: R_STOCKOUT 需补货
+  store_id: STORE_01
+  sku_ids:
+  - SKU_01_STOCKOUT_01
+  order_no: ''
+  input_scope: {}
+  trigger_type: RESTOCK_NEEDED
+  expected_route: HAS_RECO
+  expected_reason: null
+  expected_formal_result: {}
+  remarks: ''
+- scenario_id: SC-OP05-002
+  workflow: OP-05
+  nature: data
+  description: R_NORMAL 无需补
+  store_id: STORE_01
+  sku_ids:
+  - SKU_01_NORMAL_01
+  order_no: ''
+  input_scope: {}
+  trigger_type: STOCK_SUFFICIENT
+  expected_route: NO_RECO
+  expected_reason: null
+  expected_formal_result: {}
+  remarks: ''
+- scenario_id: SC-OP05-003
+  workflow: OP-05
+  nature: data
+  description: STORE_02 缺 lead_time（缺配置测试店）
+  store_id: STORE_02
+  sku_ids:
+  - SKU_02_STOCKOUT_01
+  order_no: ''
+  input_scope: {}
+  trigger_type: MISSING_LEAD_TIME_CONFIG
+  expected_route: UNDETERMINED
+  expected_reason: MISSING_LEAD_TIME_CONFIG
+  expected_formal_result: {}
+  remarks: ''
+- scenario_id: SC-OP05-004
+  workflow: OP-05
+  nature: data
+  description: 指定 SKU 直接算建议
+  store_id: STORE_01
+  sku_ids:
+  - SKU_01_STOCKOUT_01
+  order_no: ''
+  input_scope: {}
+  trigger_type: SKIP_PRESCREEN
+  expected_route: HAS_RECO
+  expected_reason: null
+  expected_formal_result: {}
+  remarks: ''
+- scenario_id: SC-OP05-005
+  workflow: OP-05
+  nature: runtime_eval
+  description: 前置 HAS_RECO；评测模拟 Confirmation 接受
+  store_id: STORE_01
+  sku_ids:
+  - SKU_01_STOCKOUT_01
+  order_no: ''
+  input_scope: {}
+  trigger_type: CONFIRM_ACCEPT
+  expected_route: HAS_RECO
+  expected_reason: null
+  expected_formal_result: {}
+  remarks: 'runtime: HITL Confirmation 接受，归 S4/harness'
+- scenario_id: SC-OP05-006
+  workflow: OP-05
+  nature: runtime_eval
+  description: 前置 HAS_RECO；评测模拟拒绝
+  store_id: STORE_01
+  sku_ids:
+  - SKU_01_STOCKOUT_01
+  order_no: ''
+  input_scope: {}
+  trigger_type: CONFIRM_REJECT
+  expected_route: HAS_RECO
+  expected_reason: null
+  expected_formal_result: {}
+  remarks: 'runtime: HITL Confirmation 拒绝，归 S4/harness'
+- scenario_id: SC-OP07-001
+  workflow: OP-07
+  nature: data
+  description: R_HEALTH_FULL；缺 traffic 不降核心完整度
+  store_id: STORE_01
+  sku_ids:
+  - SKU_01_HEALTH_FULL_01
+  order_no: ''
+  input_scope: {}
+  trigger_type: FULL_CORE
+  expected_route: null
+  expected_reason: null
+  expected_formal_result:
+    summary: 五核心齐，仅缺可选 traffic；核心完整度 high
+  remarks: ''
+- scenario_id: SC-OP07-002
+  workflow: OP-07
+  nature: data
+  description: V1 可选仅 traffic 且恒缺（与 001 可同 SKU）
+  store_id: STORE_01
+  sku_ids:
+  - SKU_01_HEALTH_FULL_01
+  order_no: ''
+  input_scope: {}
+  trigger_type: MISSING_OPTIONAL
+  expected_route: null
+  expected_reason: null
+  expected_formal_result:
+    summary: 可选维缺失已标注、核心未降级
+  remarks: ''
+- scenario_id: SC-OP07-003
+  workflow: OP-07
+  nature: data
+  description: R_HEALTH_CORE_MISS
+  store_id: STORE_01
+  sku_ids:
+  - SKU_01_HEALTH_CORE_MISS_01
+  order_no: ''
+  input_scope: {}
+  trigger_type: MISSING_CORE
+  expected_route: null
+  expected_reason: null
+  expected_formal_result:
+    summary: 缺核心维（无 cost → margin 缺），完整度降级
+  remarks: ''
+- scenario_id: SC-OP08-001
+  workflow: OP-08
+  nature: data
+  description: R_ANOMALY_DROP 达阈值
+  store_id: STORE_01
+  sku_ids:
+  - SKU_01_ANOMALY_DROP_01
+  order_no: ''
+  input_scope: {}
+  trigger_type: DROP_OVER_THRESHOLD
+  expected_route: ANOMALY
+  expected_reason: null
+  expected_formal_result: {}
+  remarks: ''
+- scenario_id: SC-OP08-002
+  workflow: OP-08
+  nature: data
+  description: R_NORMAL 未达阈值
+  store_id: STORE_01
+  sku_ids:
+  - SKU_01_NORMAL_01
+  order_no: ''
+  input_scope: {}
+  trigger_type: BELOW_THRESHOLD
+  expected_route: NORMAL
+  expected_reason: null
+  expected_formal_result: {}
+  remarks: ''
+- scenario_id: SC-OP08-003
+  workflow: OP-08
+  nature: data
+  description: STORE_02 缺异常阈值 key
+  store_id: STORE_02
+  sku_ids:
+  - SKU_02_ANOMALY_DROP_01
+  order_no: ''
+  input_scope: {}
+  trigger_type: MISSING_ANOMALY_CONFIG
+  expected_route: UNDETERMINED
+  expected_reason: MISSING_ANOMALY_CONFIG
+  expected_formal_result: {}
+  remarks: ''
+- scenario_id: SC-OP08-004
+  workflow: OP-08
+  nature: data
+  description: R_PRICE_DROP 降价证据
+  store_id: STORE_01
+  sku_ids:
+  - SKU_01_PRICE_DROP_01
+  order_no: ''
+  input_scope: {}
+  trigger_type: DROP_WITH_PRICE_EVIDENCE
+  expected_route: ANOMALY
+  expected_reason: null
+  expected_formal_result: {}
+  remarks: ''
+- scenario_id: SC-ISO-001
+  workflow: ISO
+  nature: data
+  description: STORE_01 上下文读 STORE_02 订单 → 期望 FORBIDDEN / 空隔离
+  store_id: STORE_01
+  sku_ids: []
+  order_no: ORD_02_002489
+  input_scope: {}
+  trigger_type: CROSS_STORE
+  expected_route: FORBIDDEN
+  expected_reason: null
+  expected_formal_result: {}
+  remarks: ''
