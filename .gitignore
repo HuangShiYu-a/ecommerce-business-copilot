@@ -7,6 +7,7 @@ __pycache__/
 # Env / secrets
 .env
 .env.*
+!.env.example
 .venv/
 
 # Generated data（S3 输出，可再生成）
