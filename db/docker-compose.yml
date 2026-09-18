@@ -1,0 +1,23 @@
+# E-commerce Business Copilot — PostgreSQL (pgvector) 开发库
+# 端口 5434（宿主）→ 5432（容器）：本机 PostgreSQL 占用 5432、另一 Docker 栈占用 5433，故用 5434。
+# 数据卷 ec_pgdata 持久化；`docker-compose down -v` 可一键重置。
+services:
+  db:
+    image: pgvector/pgvector:pg16
+    container_name: ec-copilot-pg
+    environment:
+      POSTGRES_USER: ec
+      POSTGRES_PASSWORD: ec_secret
+      POSTGRES_DB: ec_copilot
+    ports:
+      - "5434:5432"
+    volumes:
+      - ec_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ec -d ec_copilot"]
+      interval: 5s
+      timeout: 3s
+      retries: 15
+
+volumes:
+  ec_pgdata:
