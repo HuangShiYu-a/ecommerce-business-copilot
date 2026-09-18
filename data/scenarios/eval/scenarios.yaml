@@ -449,7 +449,7 @@ scenarios:
   description: STORE_01 上下文读 STORE_02 订单 → 期望 FORBIDDEN / 空隔离
   store_id: STORE_01
   sku_ids: []
-  order_no: ORD_02_002490
+  order_no: ORD_02_002489
   input_scope: {}
   trigger_type: CROSS_STORE
   expected_route: FORBIDDEN

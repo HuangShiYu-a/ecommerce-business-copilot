@@ -293,7 +293,7 @@ def _gen_orders(stores, customers, addresses, skus, role_of, roles_def,
     for s, role, w in weighted:
         n = max(1, int(round(target * w / total_w)))
         if role == "R_SPARSE_SALES":
-            n = rng.randint(2, 4)
+            n = rng.randint(1, 2)   # 稀疏：销售点恒 1-2（< MIN_SALE_POINTS=4，稳定触发 MISSING_SALES_WINDOW）
         sales = roles_def[role]["sales"]
         window = sales["window_days"]
         pattern = sales.get("pattern", "steady")
