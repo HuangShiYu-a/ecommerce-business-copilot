@@ -9,7 +9,7 @@ from data.generator.generate import generate
 
 CHECK_IDS = [
     "schema_fk", "s12a_status", "time_order", "after_sales_qty", "derived_after_delivery",
-    "price_history", "role_narrative", "sc_preconditions", "op07_core_dims",
+    "price_history", "role_narrative", "sales_shape", "sc_preconditions", "op07_core_dims",
     "knowledge_lifecycle", "isolation", "fixture_tolerance", "scope_mutual_exclusion",
 ]
 

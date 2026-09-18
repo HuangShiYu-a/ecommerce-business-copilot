@@ -55,6 +55,7 @@ def validate_all(cfg: GeneratorConfig, canonical_dir: Path, output_root: Path) -
     checks.append(_derived_after_delivery(data))
     checks.append(_price_history(data, as_of))
     checks.append(_role_narrative(data, output_root, cfg.profile.name))
+    checks.append(_sales_shape(data, as_of, output_root, cfg.profile.name))
     checks.append(_sc_preconditions(data, output_root, cfg.profile.name))
     checks.append(_op07_core_dims(data, output_root, cfg.profile.name))
     checks.append(_knowledge_lifecycle(data, as_of))
@@ -231,6 +232,46 @@ def _role_narrative(d, output_root, profile) -> dict:
     if slow_avail and min(slow_avail) < 100:
         issues.append("R_SLOW 库存不够高")
     return _ck("role_narrative", "角色叙事可辨", "P1", not issues, issues)
+
+
+def _sales_shape(d, as_of, output_root, profile) -> dict:
+    """销量形状（P1）：R_ANOMALY_DROP / R_PRICE_DROP 近 7 天较前 7 天应明显下降（SC-OP08 ANOMALY 前置）。"""
+    issues = []
+    sku_roles = _read_csv(output_root / profile / "sku_roles.csv")
+    role_of = {r["sku_code"]: r["role_id"] for r in sku_roles}
+    sku_code_by_id = {int(s["id"]): s["sku_code"] for s in d["product_skus"]}
+    valid_ids = {int(o["id"]) for o in d["orders"] if o["status"] in VALID_SALES}
+    order_date = {int(o["id"]): datetime.fromisoformat(o["ordered_at"]).date() for o in d["orders"]}
+
+    def last_vs_prior(sku_code):
+        sid = next((sid for sid, code in sku_code_by_id.items() if code == sku_code), None)
+        if sid is None:
+            return None
+        last = prior = 0
+        for it in d["order_items"]:
+            if int(it["sku_id"]) != sid or int(it["order_id"]) not in valid_ids:
+                continue
+            od = order_date.get(int(it["order_id"]))
+            if od is None:
+                continue
+            age = (as_of - od).days
+            if 0 <= age < 7:
+                last += int(it["quantity"])
+            elif 7 <= age < 14:
+                prior += int(it["quantity"])
+        return last, prior
+
+    for sku_code, role in role_of.items():
+        if role not in ("R_ANOMALY_DROP", "R_PRICE_DROP"):
+            continue
+        r = last_vs_prior(sku_code)
+        if r is None:
+            issues.append(f"{sku_code} 无对应 SKU")
+            continue
+        last, prior = r
+        if prior > 0 and last >= prior * 0.8:
+            issues.append(f"{sku_code} 近7天({last}) 未较前7天({prior}) 下降≥20%")
+    return _ck("sales_shape", "销量形状（骤降/降价后下降）", "P1", not issues, issues)
 
 
 def _sc_preconditions(d, output_root, profile) -> dict:

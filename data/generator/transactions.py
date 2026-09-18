@@ -159,6 +159,13 @@ def _gen_customers(stores: list[dict], n_per_store: int, rng) -> tuple[list[dict
     return customers, addresses
 
 
+def _rand_between(rng, lo: datetime, hi: datetime) -> datetime:
+    """[lo, hi] 均匀随机时间点。"""
+    if hi <= lo:
+        return lo
+    return lo + timedelta(seconds=rng.randint(0, int((hi - lo).total_seconds())))
+
+
 def _gen_orders(stores, customers, addresses, skus, role_of, roles_def,
                 target, as_of_dt, conflict_codes, rng):
     addr_by_customer = {int(a["customer_id"]): a for a in addresses}
@@ -282,16 +289,34 @@ def _gen_orders(stores, customers, addresses, skus, role_of, roles_def,
         orders.append(order_row)
         order_items.append(item_row)
 
-    # 有效销售单（角色权重分配）
+    # 有效销售单（角色权重分配；按 pattern 分布下单日期）
     for s, role, w in weighted:
         n = max(1, int(round(target * w / total_w)))
         if role == "R_SPARSE_SALES":
             n = rng.randint(2, 4)
-        window = roles_def[role]["sales"]["window_days"]
+        sales = roles_def[role]["sales"]
+        window = sales["window_days"]
+        pattern = sales.get("pattern", "steady")
         start = as_of_dt - timedelta(days=window)
-        span = (as_of_dt - timedelta(days=1)) - start
-        for _ in range(n):
-            ordered = start + timedelta(seconds=rng.randint(0, max(0, int(span.total_seconds()))))
+        latest = as_of_dt - timedelta(days=1)
+
+        if pattern == "spike_then_drop":
+            # R_ANOMALY_DROP：前段正常、近 7 天骤降（SC-OP08-001 ANOMALY；wow 对比需近 7 天明显低于前 7 天）
+            cut = as_of_dt - timedelta(days=7)
+            n_early = int(n * 0.88)
+            dates = [_rand_between(rng, start, cut) for _ in range(n_early)]
+            dates += [_rand_between(rng, cut, latest) for _ in range(n - n_early)]
+        elif pattern == "drop_after":
+            # R_PRICE_DROP：降价（前 7–14 天）后近 7 天销量明显下降（SC-OP08-004 ANOMALY + 价格证据）。
+            # 切点必须在第 7 天（WoW 对比：近 7 天 vs 前 7 天），且分离度要强（92/8）以抗随机方差
+            cut = as_of_dt - timedelta(days=7)
+            n_early = int(n * 0.92)
+            dates = [_rand_between(rng, start, cut) for _ in range(n_early)]
+            dates += [_rand_between(rng, cut, latest) for _ in range(n - n_early)]
+        else:
+            dates = [_rand_between(rng, start, latest) for _ in range(n)]
+
+        for ordered in dates:
             qty = rng.randint(1, 2)
             roll = rng.random()
             construction = "delay" if roll < 0.08 else ("missing_promised" if roll < 0.11 else None)

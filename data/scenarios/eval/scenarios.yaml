@@ -22,7 +22,7 @@ scenarios:
   description: 超 promised 未按时送达
   store_id: STORE_01
   sku_ids: []
-  order_no: ORD_01_000004
+  order_no: ORD_01_000002
   input_scope: {}
   trigger_type: PAST_PROMISED
   expected_route: ANOMALY
@@ -35,7 +35,7 @@ scenarios:
   description: 缺 promised_delivery_at
   store_id: STORE_01
   sku_ids: []
-  order_no: ORD_01_000044
+  order_no: ORD_01_000035
   input_scope: {}
   trigger_type: MISSING_PROMISED_AT
   expected_route: UNDETERMINED
@@ -48,7 +48,7 @@ scenarios:
   description: 数据可造延误单；评测 mock Knowledge 不可用仍出分析
   store_id: STORE_01
   sku_ids: []
-  order_no: ORD_01_000002
+  order_no: ORD_01_000005
   input_scope: {}
   trigger_type: DELAY_THEN_KNOWLEDGE_DOWN
   expected_route: ANOMALY
@@ -61,7 +61,7 @@ scenarios:
   description: 可退类目、签收在窗口内
   store_id: STORE_01
   sku_ids: []
-  order_no: ORD_01_000439
+  order_no: ORD_01_000438
   input_scope: {}
   trigger_type: WITHIN_WINDOW
   expected_route: eligible
@@ -87,7 +87,7 @@ scenarios:
   description: 已送达未签收
   store_id: STORE_01
   sku_ids: []
-  order_no: ORD_01_000016
+  order_no: ORD_01_000036
   input_scope: {}
   trigger_type: MISSING_SIGNED_AT
   expected_route: undetermined
@@ -100,7 +100,7 @@ scenarios:
   description: 前置 eligible；评测停在 Confirmation 取消
   store_id: STORE_01
   sku_ids: []
-  order_no: ORD_01_000439
+  order_no: ORD_01_000438
   input_scope: {}
   trigger_type: CONFIRM_CANCEL
   expected_route: eligible
@@ -113,7 +113,7 @@ scenarios:
   description: 前置 eligible；评测审批拒绝
   store_id: STORE_01
   sku_ids: []
-  order_no: ORD_01_000439
+  order_no: ORD_01_000438
   input_scope: {}
   trigger_type: APPROVAL_REJECT
   expected_route: eligible
@@ -126,7 +126,7 @@ scenarios:
   description: 预置已成功售后作对照（无路由断言）
   store_id: STORE_01
   sku_ids: []
-  order_no: ORD_01_000004
+  order_no: ORD_01_000003
   input_scope: {}
   trigger_type: PREEXISTING_AFTERSALES
   expected_route: null
@@ -449,7 +449,7 @@ scenarios:
   description: STORE_01 上下文读 STORE_02 订单 → 期望 FORBIDDEN / 空隔离
   store_id: STORE_01
   sku_ids: []
-  order_no: ORD_02_002489
+  order_no: ORD_02_002490
   input_scope: {}
   trigger_type: CROSS_STORE
   expected_route: FORBIDDEN

@@ -79,7 +79,12 @@ def eval_slice(cfg: GeneratorConfig, dev_world_root: Path, output_root: Path) ->
     ref_skus = [s for s in data["product_skus"] if s["sku_code"] in ref_sku_codes]
     ref_sku_ids = {int(s["id"]) for s in ref_skus}
     ref_product_ids = {int(s["product_id"]) for s in ref_skus}
-    ref_orders = [o for o in data["orders"] if o["order_no"] in ref_order_nos]
+    # SKU-based SC（OP-03/04/05/07/08）的销售上下文：引用 SKU 的订单也纳入，
+    # 使 eval 内这些 SKU 有销量/反馈/售后数据支撑路由
+    sku_order_ids = {int(it["order_id"]) for it in data["order_items"]
+                     if int(it["sku_id"]) in ref_sku_ids}
+    ref_orders = [o for o in data["orders"]
+                  if o["order_no"] in ref_order_nos or int(o["id"]) in sku_order_ids]
     ref_order_ids = {int(o["id"]) for o in ref_orders}
     ref_customer_ids = {int(o["customer_id"]) for o in ref_orders}
     ref_items = [it for it in data["order_items"] if int(it["order_id"]) in ref_order_ids]

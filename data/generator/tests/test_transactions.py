@@ -115,3 +115,32 @@ def test_inventory_nonnegative_and_fk(tx):
     sku_ids = {int(s["id"]) for s in tx["data"]["product_skus"]}
     for r in tx["data"]["inventory"]:
         assert int(r["sku_id"]) in sku_ids
+
+
+def test_sales_patterns_present(tx):
+    """R_ANOMALY_DROP / R_PRICE_DROP 近7天较前7天明显下降（SC-OP08 ANOMALY 前置）。"""
+    sku_roles = tx["data"]["sku_roles"]
+    role_of = {r["sku_code"]: r["role_id"] for r in sku_roles}
+    sku_code_by_id = {int(s["id"]): s["sku_code"] for s in tx["data"]["product_skus"]}
+    valid_ids = {int(o["id"]) for o in tx["data"]["orders"]
+                 if o["status"] in ("PROCESSING", "SHIPPED", "COMPLETED")}
+    order_date = {int(o["id"]): datetime.fromisoformat(o["ordered_at"]).date()
+                  for o in tx["data"]["orders"]}
+
+    def last_vs_prior(sku_code):
+        sid = next((sid for sid, code in sku_code_by_id.items() if code == sku_code), None)
+        last = prior = 0
+        for it in tx["data"]["order_items"]:
+            if int(it["sku_id"]) != sid or int(it["order_id"]) not in valid_ids:
+                continue
+            age = (AS_OF - order_date[int(it["order_id"])]).days
+            if 0 <= age < 7:
+                last += int(it["quantity"])
+            elif 7 <= age < 14:
+                prior += int(it["quantity"])
+        return last, prior
+
+    for code in ("SKU_01_ANOMALY_DROP_01", "SKU_01_PRICE_DROP_01"):
+        last, prior = last_vs_prior(code)
+        assert prior > 0, f"{code} 前7天无销量"
+        assert last < prior * 0.8, f"{code} 无骤降 (last={last}, prior={prior})"
