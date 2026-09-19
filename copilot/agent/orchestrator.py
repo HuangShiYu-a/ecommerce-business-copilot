@@ -12,6 +12,7 @@
 """
 from __future__ import annotations
 
+import time
 from typing import TypedDict
 
 from langgraph.checkpoint.memory import InMemorySaver
@@ -48,6 +49,18 @@ def _new_task(routing: dict) -> dict:
     }
 
 
+def _emit(exec_: dict, type_: str, step: str,
+          status: str = "success", payload: dict | None = None) -> dict:
+    """向 execution.trace 追加 Domain Trace Event（Spec-1 §13）。"""
+    events = list(exec_.get("trace", []))
+    events.append({
+        "type": type_, "run_id": exec_.get("run_id", ""), "step": step,
+        "status": status, "payload": payload or {}, "timestamp": time.time(),
+    })
+    exec_["trace"] = events
+    return exec_
+
+
 # ---- 节点 ----
 
 def pending_check(state: AgentRuntimeState) -> dict:
@@ -66,7 +79,9 @@ def handle_pending(state: AgentRuntimeState) -> dict:
         task["status"] = COMPLETED if accepted else TERMINATED
         task["current_step"] = "confirm"
         msg = "已确认，补货建议生效。" if accepted else "已取消该操作。"
-        return {"task": task, "__next": "end", "response": {
+        exec_ = _emit(state.get("execution", {}), "human_confirmed", "confirm",
+                      payload={"decision": "accepted" if accepted else "rejected"})
+        return {"task": task, "execution": exec_, "__next": "end", "response": {
             "message": msg, "status": task["status"], "needs_user_input": False,
             "result": task.get("slots", {})}}
     if task.get("pending_type") == "slot_fill":
@@ -81,10 +96,16 @@ def handle_pending(state: AgentRuntimeState) -> dict:
             routing = dict(state.get("routing", {}))
             routing["entities"] = {**routing.get("entities", {}), **slots}
             routing["missing_slots"] = []
-            return {"task": task, "routing": routing, "__next": "dispatcher",
-                    "execution": {**state.get("execution", {}), "phase": "continue"}}
+            exec_ = _emit(state.get("execution", {}), "step_completed", "slot_fill",
+                          payload={"filled": filled})
+            exec_["phase"] = "continue"
+            return {"task": task, "routing": routing, "execution": exec_, "__next": "dispatcher"}
         return {"task": task, "__next": "clarify"}
     return {"__next": "router"}
+
+
+def _is_continue(message: str) -> bool:
+    return any(w in message for w in ("继续", "重新", "再试", "接着"))
 
 
 def router(state: AgentRuntimeState) -> dict:
@@ -94,26 +115,61 @@ def router(state: AgentRuntimeState) -> dict:
         result = llm_route(message, state.get("conversation"))
     else:
         result = route_rules(message)
+    # 续答（A13 / §9.3）：用户说「继续/重新」→ 复用上一任务的意图与槽位重试（简单恢复）
+    if _is_continue(message):
+        task = state.get("task")
+        if task and task.get("intent"):
+            result.intent = task["intent"]
+            result.entities = {**task.get("slots", {}), **result.entities}
+            result.missing_slots = []
     # 裸续问（out_of_scope + 有实体 + 上一个任务）→ 沿用上一个任务的意图（多轮引用）
-    if result.intent == "out_of_scope" and result.entities:
+    elif result.intent == "out_of_scope" and result.entities:
         task = state.get("task")
         prior = task.get("intent") if task else None
         if prior and prior != "out_of_scope":
             result.intent = prior
-    return {"routing": result.model_dump(),
-            "execution": {**state.get("execution", {}), "phase": "new", "pending": False}}
+    exec_ = _emit(state.get("execution", {}), "intent_detected", "router",
+                  payload={"intent": result.intent, "entities": result.entities})
+    exec_["phase"] = "new"
+    exec_["pending"] = False
+    return {"routing": result.model_dump(), "execution": exec_}
+
+
+# workflow → 允许角色（阶段 4 随各 workflow 扩展；Spec-1 §4.2）
+WORKFLOW_ROLES = {"OP-05": ("operations",), "OP-04": ("operations",)}
 
 
 def guardrails(state: AgentRuntimeState) -> dict:
     routing = dict(state.get("routing", {}))
     intent = routing.get("intent")
-    if not resolve(intent):  # 未知意图 → out_of_scope（Spec-1 §10.3）
+    role = state.get("session", {}).get("role", "operations")
+    path = resolve(intent)
+    if path is None:  # 未知意图 → out_of_scope（Spec-1 §10.3）
         routing["intent"] = "out_of_scope"
         routing["entities"] = {}
         routing["missing_slots"] = []
+        return {"routing": routing}
     # 实体键归一化：LLM 键名 → 工具 Schema 规范键（Spec-1 §10.3）
     from .router import normalize_entities
     routing["entities"] = normalize_entities(routing.get("entities", {}))
+    # 权限检查（Spec-1 §4.2 / §10.3）：direct 工具或 workflow 的允许角色
+    denied = False
+    if path.kind == "direct" and path.target:
+        from ..tool import TOOLS
+        if not TOOLS:
+            from .. import tools  # noqa: F401
+        cls = TOOLS.get(path.target)
+        denied = bool(cls and not cls.allows(role))
+    elif path.kind == "workflow" and path.target:
+        roles = WORKFLOW_ROLES.get(path.target)
+        denied = bool(roles and role not in roles)
+    if denied:
+        exec_ = _emit(state.get("execution", {}), "step_failed", "guardrails",
+                      status="forbidden", payload={"intent": intent, "role": role})
+        exec_["denied"] = True
+        return {"routing": routing, "execution": exec_, "response": {
+            "message": f"无权执行该操作（{role} 角色权限不足）。",
+            "status": "forbidden", "needs_user_input": False}}
     return {"routing": routing}
 
 
@@ -139,8 +195,10 @@ def clarify(state: AgentRuntimeState) -> dict:
     task["missing_slots"] = list(routing.get("missing_slots", []))   # 必须带入，供补槽
     field = task["missing_slots"][0] if task["missing_slots"] else ""
     label = {"order_no": "订单号", "sku_code": "SKU 编码"}.get(field, field)
+    exec_ = _emit(state.get("execution", {}), "human_requested", "clarify",
+                  payload={"missing_slots": task["missing_slots"]})
     return {
-        "task": task,
+        "task": task, "execution": exec_,
         "response": {"message": f"请提供{label}（形如 SKU_01_STOCKOUT_01 / ORD_01_000437）。",
                      "status": WAITING_USER_INPUT, "needs_user_input": True},
     }
@@ -158,29 +216,49 @@ def tool_node(state: AgentRuntimeState) -> dict:
     ctx = ops_ctx(session["store_id"])
     intent = state["execution"]["intent"]
     entities = state["routing"]["entities"]
-    res = run_tool(_TOOL_BY_INTENT.get(intent, ""), ctx, **entities)
+    tool_id = _TOOL_BY_INTENT.get(intent, "")
+    exec_ = _emit(state["execution"], "tool_called", "tool",
+                  payload={"tool": tool_id, "arguments": entities})
+    res = run_tool(tool_id, ctx, **entities)
     data = res.data if res.ok else {"error_code": res.error_code, "error_detail": res.error_detail}
-    return {"execution": {**state["execution"], "tool_result": data}}
+    exec_ = _emit(exec_, "tool_completed", "tool", status="success" if res.ok else "error",
+                  payload={"result": data})
+    exec_["tool_result"] = data
+    return {"execution": exec_}
 
 
 def workflow_node(state: AgentRuntimeState) -> dict:
     session = state["session"]
     routing = state["routing"]
+    intent = routing["intent"]
+    exec_ = _emit(state["execution"], "tool_called", "workflow",
+                  payload={"workflow": intent, "arguments": routing.get("entities", {})})
     wf_in = WorkflowInput(
         task_id=str(session.get("session_id", "")),
         user_id=session.get("user_id", 0),
         store_id=session["store_id"],
-        intent=routing["intent"],
+        intent=intent,
         slots=routing.get("entities", {}),
     )
     wf = run_workflow(wf_in)
-    return {"execution": {**state["execution"], "workflow_result": {
-        "formal_result": wf.formal_result, "route_status": wf.route_status,
-        "status": wf.status, "confirmation_required": wf.confirmation_required,
-    }}}
+    wr = {"formal_result": wf.formal_result, "route_status": wf.route_status,
+          "status": wf.status, "confirmation_required": wf.confirmation_required}
+    exec_ = _emit(exec_, "tool_completed", "workflow",
+                  status="success" if wf.status == "completed" else wf.status,
+                  payload={"route_status": wf.route_status})
+    exec_["workflow_result"] = wr
+    return {"execution": exec_}
 
 
 def finalize(state: AgentRuntimeState) -> dict:
+    if state.get("response"):  # guardrails 权限拒绝已设响应 → 直接收尾
+        task = dict(state.get("task", {})) or _new_task(state.get("routing", {}))
+        task["status"] = TERMINATED if state["response"].get("status") == "forbidden" else task.get("status", RUNNING)
+        task["current_step"] = "guardrails"
+        exec_ = _emit(state.get("execution", {}), "final_response", "finalize",
+                      payload={"status": state["response"].get("status")})
+        return {"task": task, "execution": exec_, "response": state["response"]}
+
     execution = state.get("execution", {})
     phase = execution.get("phase", "new")
     routing = state.get("routing", {})
@@ -202,7 +280,9 @@ def finalize(state: AgentRuntimeState) -> dict:
                     slots={**task.get("slots", {}), **routing.get("entities", {})})
         if wr.get("confirmation_required"):
             task.update(status=WAITING_USER_INPUT, pending_type="confirm", current_step="confirm")
-            return {"task": task, "response": {
+            exec_ = _emit(state["execution"], "human_requested", "confirm",
+                          payload={"route_status": wr.get("route_status")})
+            return {"task": task, "execution": exec_, "response": {
                 "message": _draft_workflow(wr) + "\n\n是否确认执行？",
                 "status": WAITING_USER_INPUT, "needs_user_input": True,
                 "approval_required": True, "result": wr.get("formal_result", {})}}
@@ -214,7 +294,8 @@ def finalize(state: AgentRuntimeState) -> dict:
 
     task["current_step"] = "finalize"
     task["status"] = status if status in (COMPLETED, TERMINATED) else task.get("status", RUNNING)
-    return {"task": task, "response": {
+    exec_ = _emit(state["execution"], "final_response", "finalize", payload={"status": status})
+    return {"task": task, "execution": exec_, "response": {
         "message": message, "status": status, "needs_user_input": False,
         "result": execution.get("tool_result") or execution.get("workflow_result", {}).get("formal_result", {}),
     }}
@@ -248,6 +329,21 @@ def _draft_workflow(wr: dict) -> str:
 _TOOL_BY_INTENT = {"inventory_query": "T-Q-03"}
 
 
+def _default_checkpointer():
+    """PostgresSaver（Spec-2 §2，持久化跨重启）；不可用则回退 InMemorySaver。"""
+    try:
+        from langgraph.checkpoint.postgres import PostgresSaver
+        from psycopg import connect as pg_connect
+
+        from ..config import DB_DSN
+        conn = pg_connect(DB_DSN, autocommit=True, connect_timeout=5)
+        saver = PostgresSaver(conn)
+        saver.setup()
+        return saver
+    except Exception:
+        return InMemorySaver()
+
+
 def build_runtime_graph(checkpointer=None):
     """构建 Runtime 图；checkpointer 传入则启用持久化（会话/续答）。"""
     g = StateGraph(AgentRuntimeState)
@@ -271,7 +367,9 @@ def build_runtime_graph(checkpointer=None):
                             {"router": "router", "dispatcher": "dispatcher",
                              "clarify": "clarify", "end": END})
     g.add_edge("router", "guardrails")
-    g.add_edge("guardrails", "resolver")
+    g.add_conditional_edges("guardrails",
+                            lambda s: "finalize" if s.get("response") else "resolver",
+                            {"resolver": "resolver", "finalize": "finalize"})
     g.add_conditional_edges("resolver",
                             lambda s: s.get("__next", "dispatcher"),
                             {"dispatcher": "dispatcher", "clarify": "clarify"})
@@ -283,7 +381,7 @@ def build_runtime_graph(checkpointer=None):
     g.add_edge("workflow_node", "finalize")
     g.add_edge("finalize", END)
 
-    return g.compile(checkpointer=checkpointer or InMemorySaver())
+    return g.compile(checkpointer=checkpointer or _default_checkpointer())
 
 
 def run_agent(graph, thread_id: str, session: dict, message: str) -> dict:
@@ -296,6 +394,7 @@ def run_agent(graph, thread_id: str, session: dict, message: str) -> dict:
         "session": session,
         "message": message,
         "execution": {"run_id": trace.run_id, "trace": trace.to_list()},
+        "response": {},   # 覆盖上轮持久化的 response（guardrails 条件边依赖）
     }
     config = {"configurable": {"thread_id": thread_id}}
     # 续轮：读取已持久化的 task/conversation，不覆盖
@@ -310,6 +409,7 @@ def run_agent(graph, thread_id: str, session: dict, message: str) -> dict:
 
     out = graph.invoke(input_state, config)
     resp = out.get("response", {"message": "", "status": "error"})
+    _persist(out, session, thread_id, message)
     # 追加会话历史（user + assistant）
     conv = list(out.get("conversation", []))
     conv += [{"role": "user", "content": message}]
@@ -317,3 +417,47 @@ def run_agent(graph, thread_id: str, session: dict, message: str) -> dict:
         conv += [{"role": "assistant", "content": resp["message"]}]
     graph.update_state(config, {"conversation": conv})
     return {"response": resp, "state": out}
+
+
+def _persist(out: dict, session: dict, thread_id: str, message: str) -> None:
+    """会话创建 + run_log 写入 + 记忆提取（Spec-2 / §14.3）；失败降级不阻断。"""
+    resp = out.get("response", {})
+    exec_ = out.get("execution", {})
+    sid = session.get("session_id", "")
+    uid = session.get("user_id", 0)
+    role = session.get("role", "operations")
+    store = session.get("store_id", 1)
+    try:
+        from ..runtime.store import create_session, upsert_memory, write_run_log
+        create_session(sid, thread_id, uid, role, store)
+        workflow = exec_.get("intent") if exec_.get("kind") == "workflow" else None
+        status = resp.get("status", "error")
+        write_run_log(
+            exec_.get("run_id", ""), sid, uid, role, store,
+            intent=out.get("routing", {}).get("intent"),
+            workflow=workflow,
+            route_status=(exec_.get("workflow_result") or {}).get("route_status"),
+            status=status,
+            tool_calls=exec_.get("trace", []),
+            error=status if status in ("error", "forbidden", "failed") else None,
+        )
+        if status == "completed":
+            _extract_memory(session, message)
+    except Exception:
+        pass  # 持久化失败不阻断对话（降级）
+
+
+def _extract_memory(session: dict, message: str) -> None:
+    """记忆提取（V1 规则式，仅 completed 后；§14.3 只记偏好，不记业务事实）。"""
+    import re
+
+    from ..runtime.store import upsert_memory
+    uid = session.get("user_id", 0)
+    src = session.get("session_id")
+    m = re.search(r"默认.*?(\d+)\s*天", message)
+    if m:
+        upsert_memory(uid, "preference", "default_horizon", int(m.group(1)),
+                      confidence=0.9, source=src)
+    if "表格" in message and ("偏好" in message or "喜欢" in message):
+        upsert_memory(uid, "preference", "response_format", "table",
+                      confidence=0.7, source=src)

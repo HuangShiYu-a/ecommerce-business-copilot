@@ -145,3 +145,23 @@ def test_context_truncate_history():
     blocks = assemble(ContextInput(role="operations", store_id=1, message="x", conversation=conv, recent_turns=3))
     user_msgs = [t for r, t in blocks if r == "user" and t != "x"]
     assert user_msgs == ["turn7", "turn8", "turn9"]   # V1 截断最近 3 轮
+
+
+# ---- §8.7 Effective Tool Catalog（角色过滤）----
+
+def test_catalog_all_tools():
+    from copilot.tool import effective_catalog
+    cat = effective_catalog()
+    ids = {t["tool_id"] for t in cat}
+    assert ids == {"T-Q-03", "T-A-07", "T-R-01"}
+    tr = next(t for t in cat if t["tool_id"] == "T-R-01")
+    assert tr["description"] and tr["input_schema"]["properties"]
+
+
+def test_catalog_role_filter():
+    from copilot.tool import effective_catalog
+    cs = {t["tool_id"] for t in effective_catalog("customer_service")}
+    ops = {t["tool_id"] for t in effective_catalog("operations")}
+    assert cs == {"T-Q-03"}                      # 客服只见库存查询
+    assert ops == {"T-Q-03", "T-A-07", "T-R-01"} # 运营见全部
+    assert "T-R-01" not in cs                    # 客服不应看见补货工具（Spec-1 §8.7）

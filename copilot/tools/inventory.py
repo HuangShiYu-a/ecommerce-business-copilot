@@ -1,6 +1,8 @@
 """T-Q-03 get_inventory：查询库存（Query，只读，store 隔离）。"""
 from __future__ import annotations
 
+from pydantic import BaseModel, Field
+
 from ..calc.inventory import resolve_sku
 from ..db import query_one
 from ..tool import INVALID_INPUT, NOT_FOUND, Tool, err, ok, register_tool
@@ -11,7 +13,16 @@ class GetInventory(Tool):
     tool_id = "T-Q-03"
     name = "get_inventory"
     category = "Query"
+    description = "按 SKU 查询当前可用库存/安全库存/再订货点（store 隔离）"
     risk = "LOW"
+    read_write = "read"
+    allowed_roles = ("customer_service", "operations")
+
+    class Input(BaseModel):
+        sku_code: str | None = Field(default=None, description="SKU 编码，如 SKU_01_STOCKOUT_01")
+        sku_id: int | None = None
+
+    input_model = Input
 
     def run(self, ctx, sku_id=None, sku_code=None, **kw):
         if sku_id is None and not sku_code:

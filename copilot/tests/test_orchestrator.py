@@ -13,9 +13,11 @@ from copilot.agent.orchestrator import build_runtime_graph, run_agent
 SESSION = {"session_id": "s1", "user_id": 3, "role": "operations", "store_id": 1}
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture
 def runtime():
-    return build_runtime_graph()
+    """函数级独立 InMemorySaver：避免 PostgresSaver 跨运行线程污染测试隔离。"""
+    from langgraph.checkpoint.memory import InMemorySaver
+    return build_runtime_graph(InMemorySaver())
 
 
 def _turn(runtime, thread, msg):
@@ -83,3 +85,39 @@ def test_out_of_scope(runtime):
     r = _turn(runtime, "t_ood", "帮我写首诗")
     assert r["status"] == "terminated"
     assert "能力范围" in r["message"]
+
+
+def test_permission_denied_customer_service():
+    """权限门控：客服角色访问补货（ops-only）→ forbidden。"""
+    from langgraph.checkpoint.memory import InMemorySaver
+    from copilot.agent.orchestrator import build_runtime_graph, run_agent
+    g = build_runtime_graph(InMemorySaver())
+    sess = {"session_id": "s_cs", "user_id": 1, "role": "customer_service", "store_id": 1}
+    r = run_agent(g, "t_perm", sess, "SKU_01_STOCKOUT_01 建议补多少")["response"]
+    assert r["status"] == "forbidden"
+    assert "无权" in r["message"]
+
+
+def test_continue_retry_after_reject(runtime):
+    """续答（A13）：拒绝后说「继续」→ 复用上一任务意图与槽位重试。"""
+    thread = "t_cont"
+    r1 = _turn(runtime, thread, "SKU_01_STOCKOUT_01 建议补多少")
+    assert r1["status"] == "waiting_user_input"
+    r2 = _turn(runtime, thread, "拒绝")
+    assert r2["status"] == "terminated"
+    r3 = _turn(runtime, thread, "继续")
+    assert r3["status"] == "waiting_user_input"   # 重新进入确认
+    assert "确认" in r3["message"]
+
+
+def test_postgres_persistence():
+    """PostgresSaver 持久化：会话跨 graph 实例存活（Spec-2）。"""
+    from copilot.runtime.store import close_session, get_session
+    sid = "pg_persist_test"
+    sess = {"session_id": sid, "user_id": 3, "role": "operations", "store_id": 1}
+    g1 = build_runtime_graph()   # 默认 PostgresSaver
+    r = run_agent(g1, sid, sess, "SKU_01_STOCKOUT_01 库存多少")["response"]
+    assert r["status"] == "completed"
+    s = get_session(sid)
+    assert s and s["status"] == "active"
+    close_session(sid)

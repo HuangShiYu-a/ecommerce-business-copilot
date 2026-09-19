@@ -1,6 +1,8 @@
 """T-A-07 analyze_stockout_risk：缺货风险分析（Analysis，只读，确定性）。"""
 from __future__ import annotations
 
+from pydantic import BaseModel, Field
+
 from ..calc.inventory import resolve_sku, stockout_analysis
 from ..tool import DATA_UNAVAILABLE, INVALID_INPUT, NOT_FOUND, Tool, err, ok, register_tool
 
@@ -10,7 +12,17 @@ class AnalyzeStockoutRisk(Tool):
     tool_id = "T-A-07"
     name = "analyze_stockout_risk"
     category = "Analysis"
+    description = "按 SKU 评估缺货风险等级（HIGH/NORMAL），支持 forecast_days 时间窗"
     risk = "LOW"
+    read_write = "read"
+    allowed_roles = ("operations",)
+
+    class Input(BaseModel):
+        sku_code: str | None = Field(default=None, description="SKU 编码")
+        sku_id: int | None = None
+        forecast_days: int | None = Field(default=None, description="预测窗口天数，如 7/14/30")
+
+    input_model = Input
 
     def run(self, ctx, sku_id=None, sku_code=None, forecast_days=None, **kw):
         if sku_id is None and not sku_code:

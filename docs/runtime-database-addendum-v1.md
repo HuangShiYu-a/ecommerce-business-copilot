@@ -11,9 +11,9 @@
 ### 1.1 与现有 DB 的关系
 
 ```
-public schema   ← 业务表 22 张（含 audit_logs / staff_users / store_configs，不动）
+public schema   ← 业务表 22 张（含 audit_logs / staff_users / store_configs，不动）+ LangGraph checkpoint 表（自动建）
 knowledge schema ← 知识表 2（不动）
-runtime schema  ← 本次新增：session / staff_user_memory / run_log + LangGraph checkpoint 表
+runtime schema  ← 本次新增：session / staff_user_memory / run_log
 ```
 
 - 关键关联：`staff_users`（身份来源，FK）、`audit_logs`（业务审计，run_log 不取代，C4）。
@@ -44,7 +44,7 @@ runtime schema  ← 本次新增：session / staff_user_memory / run_log + LangG
 
 - 用 `langgraph-checkpoint-postgres` 的 **PostgresSaver**，不自建 checkpoint 表（C1 / 闸门 4）。
 - checkpoint 表（`checkpoints` / `checkpoint_writes` / `checkpoint_blobs`）由 PostgresSaver 自动创建，**我们不写 DDL**。
-- 配置：PostgresSaver 建在 **`runtime` schema**（通过 saver 的 schema 参数指定）。
+- **schema 归属（D1 验证结论）**：PostgresSaver **不支持自定义 schema**（构造器无 schema 参数，SQL 用裸表名）→ checkpoint 表落 **`public`**；本层业务表（session/memory/run_log）仍落 `runtime` schema。
 
 ### 2.2 依赖与风险（D6，spike 项）
 
