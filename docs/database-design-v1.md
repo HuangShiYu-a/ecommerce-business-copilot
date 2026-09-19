@@ -429,7 +429,7 @@ knowledge  — knowledge_documents / knowledge_chunks（pgvector）
 
 扩展：`CREATE EXTENSION IF NOT EXISTS vector;`
 
-### 10.6 表清单（23+2）
+### 10.6 表清单（22+2）
 
 | # | 表 | 域 |
 |---|-----|-----|
@@ -1203,7 +1203,7 @@ PENDING|UNDER_REVIEW → CANCELLED
 ### In Scope
 
 - PostgreSQL + pgvector；含轻量 `stores` 的租户 FK  
-- 约 23 业务表级 + 2 Knowledge 表规格  
+- 约 22 业务表级 + 2 Knowledge 表规格  
 - P0 Tool 列级可履约 + **§12A 销售/退货口径**  
 - 审计、幂等、SKU 价格史、退货 quantity、订单地址快照  
 - 工单与售后分表  

@@ -20,10 +20,16 @@
   - `docs/workflow-cs06-v1.md`（WF-CS06，**V1.0.1 Frozen**）
   - `docs/workflow-ops-p0-v1.md`（WF-OP05/04/07/08/03 + 场景索引，**V1.0.2 Frozen**）
   - `docs/workflow-cross-review-v1.md`（七 WF 总审 + Freeze Gate，**V1.0.1 Frozen**）
+- **Agent Runtime V2 层**（位于业务执行层之上的新增层；不推翻上述 Frozen 契约，守 R4/R5/R10）：
+  - `docs/agent-runtime-v2-spec-v1.md`（Agent Runtime V2 Spec，**V1.0**：意图路由/多轮记忆/角色提示词/Context/Structured I/O/Trace/续答/路由失败处理）
+  - `docs/runtime-database-addendum-v1.md`（Runtime DB Addendum，**V1.0**：`runtime` schema + session/memory/run_log + PostgresSaver）
+  - `docs/agent-evaluation-v2-v1.md`（Agent Evaluation V2，**V1.0**：Legacy 回归 + Runtime Eval 双轨）
 - **Data Phase**（S1 / S3 plan 为 Draft；S2 已批准为 Generator 说明书）：
   - `docs/data-requirements-v1.md`（S1 Dataset Matrix **V1.0.2**）
   - `docs/synthetic-data-design-v1.md`（S2 Synthetic Design **V1.0.5**，已批准为 Generator 说明书）
   - `docs/s3-generator-plan-v1.md`（S3 Generator 实施规划 **V1.1**，**已实施完成**，含 S4 交接边界）
+- **Agent Runtime V2 相关计划（Draft，待评审）**：
+  - `docs/knowledge-seed-enhancement-plan-v1.md`（Knowledge 增强计划 **V1.0**：23 篇多格式 + 格式感知摄取）
 
 ### 1.1 Project Snapshot（给 AI 的快速对齐）
 
@@ -33,13 +39,13 @@
 |----|------|
 | **服务谁** | 内部 **客服**、**运营**；消费者仍与真人客服沟通 |
 | **不服务谁（V1）** | C 端买家直连 AI、独立销售角色、完整 Admin |
-| **产品形态** | **一个** Agent + 意图/任务路由 + 客服/运营两套能力集 |
+| **产品形态** | **一个** Agent（Agent Runtime V2：意图路由/多轮记忆/角色提示词/Context/Trace）+ 客服/运营两套 persona + 业务执行层（Workflow Subgraph） |
 | **客服形态** | 旁路 Copilot：查事实 → 查规则 → 判定/建议 → **人确认** → 必要时 Action；回复草稿由 LLM 生成（**不是 Tool**） |
 | **运营形态** | 取数 → 确定性算指标 → 异常/健康度/补货建议 → 人确认后再执行类动作 |
 | **Tool 五类** | Query / Analysis（含资格判定）/ Knowledge / Recommendation / Action |
 | **数据** | PostgreSQL = 业务事实；pgvector = 规则知识（含文档生命周期过滤）；指标按 DB **§12A** 等口径由代码计算 |
 | **安全** | 高风险 Action 需审批 + 审计 + 幂等；信息不足不得臆测；`store_id` 隔离 |
-| **文档链** | Business → Tool → Database → Knowledge/RAG → Workflow（Frozen）→ **Data Requirements（进行中）** → Generator → Technical / Implementation |
+| **文档链** | Business → Tool → Database → Knowledge/RAG → Workflow（Frozen）→ **Data Requirements（进行中）** → Generator → Technical / Implementation → **Agent Runtime V2（新增层，守 R4/R5/R10）** |
 
 **主链路速记**：
 
@@ -320,3 +326,4 @@ AI 必须：
 | V1.14 | 2026-09-17 | S2 V1.0.4 获用户批准为 Generator 说明书；索引 S3 实施规划 `docs/s3-generator-plan-v1.md`（Draft）；S3 立项、分阶段实施 |
 | V1.15 | 2026-09-18 | S2 升至 **V1.0.5**（状态翻转为已批准；§6.1 8 类目、§8.2 SC-CS08-007、§9 conflict 对 + expired）；Knowledge 修复移交用户 Knowledge 窗口 |
 | V1.16 | 2026-09-18 | S3 实施完成（P1–P9 全过门；dev+eval 双世界 53 测试通过）；S3 实施规划升 **V1.1** 含 S4 交接边界声明 |
+| V1.17 | 2026-09-19 | 索引 **Agent Runtime V2 层**：Spec（V1.0，意图路由/多轮记忆/角色提示词/Structured I/O/Trace/续答/路由失败）+ Runtime DB Addendum（V1.0，runtime schema）+ Agent Eval V2（V1.0，双轨评测）；索引 Knowledge 增强计划（V1.0 Draft，23 篇多格式）；Database 文档表数修正 23→22 |
