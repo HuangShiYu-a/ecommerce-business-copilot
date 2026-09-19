@@ -1,91 +1,75 @@
-"""FastAPI 工作台（S4.4）。
+"""FastAPI 工作台（S4.4 → Agent Runtime V2）。
 
-- GET  /             静态页（copilot/api/static/）
-- POST /api/agent    起一条 OP-05 工作流；HAS_RECO 时停在人工确认（interrupt）
-- POST /api/confirm  人类确认结果（accepted/rejected）→ resume 工作流
+- GET  /            静态页（copilot/api/static/）
+- POST /api/agent   一轮对话（Runtime orchestrator 驱动，含多轮/HITL/参数驱动）
+- POST /api/session 创建会话（选角色+store → 返回 session_id）
 
-线程模型：单进程内用 InMemorySaver 保活；thread_id 由本模块生成并返回，
-确认时回传。LLM 默认读 .env（DEEPSEEK_API_KEY）；LLM_MODE=dryrun 可离线跑。
+session_id 即 LangGraph thread_id（Spec-1 §6：一个 Session = 一个 Thread）。
+confirm 由前端发送「确认/拒绝」文本，经 pending_check 处理（Spec-1 §3.1）。
 """
 from __future__ import annotations
 
 import uuid
 from pathlib import Path
-from typing import Literal
 
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
-from langgraph.checkpoint.memory import InMemorySaver
-from langgraph.types import Command
 from pydantic import BaseModel, Field
 
-from ..agent.op05 import Op05State, build_graph
+from ..agent.orchestrator import build_runtime_graph, run_agent
+from ..agent.schemas import Role
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 
-app = FastAPI(title="E-commerce Business Copilot", version="0.1.0")
+app = FastAPI(title="E-commerce Business Copilot", version="0.2.0")
 
-_SAVER = InMemorySaver()
-GRAPH = build_graph(_SAVER)
+GRAPH = build_runtime_graph()
 
 
 class AgentRequest(BaseModel):
+    session_id: str
+    user_id: int = Field(default=1, ge=1)
+    role: Role = "operations"
+    store_id: int = Field(default=1, ge=1)
     message: str
+
+
+class SessionRequest(BaseModel):
+    user_id: int = Field(default=1, ge=1)
+    role: Role = "operations"
     store_id: int = Field(default=1, ge=1)
 
 
-class ConfirmRequest(BaseModel):
-    thread_id: str
-    decision: Literal["accepted", "rejected"]
-
-
 class AgentResponse(BaseModel):
-    request_id: str
-    route_status: str
+    session_id: str
     message: str
-    tool_result: dict = {}
-    confirm_needed: bool = False
-    thread_id: str | None = None
+    status: str
+    needs_user_input: bool = False
+    approval_required: bool = False
+    result: dict = {}
 
 
-def _to_response(thread_id: str, state: dict) -> AgentResponse:
-    if "__interrupt__" in state:
-        return AgentResponse(
-            request_id=state.get("request_id", ""),
-            route_status="WAITING_CONFIRMATION",
-            message=state.get("explanation", ""),
-            tool_result=state.get("tool_result", {}),
-            confirm_needed=True,
-            thread_id=thread_id,
-        )
-    return AgentResponse(
-        request_id=state.get("request_id", ""),
-        route_status=state.get("route_status", "ERROR"),
-        message=state.get("final_message") or state.get("explanation", ""),
-        tool_result=state.get("tool_result", {}),
-        confirm_needed=False,
-        thread_id=thread_id,
-    )
+@app.post("/api/session")
+def create_session(req: SessionRequest) -> AgentResponse:
+    sid = uuid.uuid4().hex[:12]
+    return AgentResponse(session_id=sid, message="会话已创建。请提问（如：SKU_01_STOCKOUT_01 库存多少）",
+                         status="active")
 
 
 @app.post("/api/agent")
 def agent(req: AgentRequest) -> AgentResponse:
-    request_id = uuid.uuid4().hex[:12]
-    thread_id = uuid.uuid4().hex[:12]
-    state = GRAPH.invoke(
-        {"request_id": request_id, "store_id": req.store_id, "message": req.message},
-        config={"configurable": {"thread_id": thread_id}},
+    session = {"session_id": req.session_id, "user_id": req.user_id,
+               "role": req.role, "store_id": req.store_id}
+    result = run_agent(GRAPH, req.session_id, session, req.message)
+    resp = result["response"]
+    return AgentResponse(
+        session_id=req.session_id,
+        message=resp.get("message", ""),
+        status=resp.get("status", "error"),
+        needs_user_input=resp.get("needs_user_input", False),
+        approval_required=resp.get("approval_required", False),
+        result=resp.get("result", {}),
     )
-    return _to_response(thread_id, state)
-
-
-@app.post("/api/confirm")
-def confirm(req: ConfirmRequest) -> AgentResponse:
-    state = GRAPH.invoke(
-        Command(resume=req.decision),
-        config={"configurable": {"thread_id": req.thread_id}},
-    )
-    return _to_response(req.thread_id, state)
 
 
 app.mount("/", StaticFiles(directory=STATIC_DIR, html=True), name="static")

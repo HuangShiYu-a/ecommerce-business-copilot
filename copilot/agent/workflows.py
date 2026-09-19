@@ -1,0 +1,97 @@
+"""Workflow 执行器（Spec-1 §3.5 契约）：Runtime → Workflow 的边界。
+
+Runtime 不把完整 AgentRuntimeState 传给 workflow，只传最小输入（WorkflowInput），
+回收结构化结果（WorkflowResult）。Workflow 内部语义（计算/映射）不暴露给 Runtime。
+"""
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from typing import Literal
+
+from ..context import ops_ctx
+from ..tool import run_tool
+
+
+@dataclass
+class WorkflowInput:
+    task_id: str
+    user_id: int
+    store_id: int
+    intent: str
+    slots: dict
+    context_refs: dict | None = None
+
+
+@dataclass
+class WorkflowResult:
+    formal_result: dict = field(default_factory=dict)
+    status: str = "completed"          # completed | undetermined | terminated | error
+    route_status: str | None = None    # 如 HAS_RECO / NO_RECO / UNDETERMINED
+    evidence_refs: list[str] = field(default_factory=list)
+    next_step: str | None = None
+    confirmation_required: bool = False
+
+
+# ---- OP-05：补货建议（T-R-01）----
+
+def _op05(ctx, sku_code: str, horizon_days: int | None, lead_time: int | None) -> WorkflowResult:
+    params = {"sku_code": sku_code}
+    if horizon_days is not None:
+        params["horizon_days"] = horizon_days
+    if lead_time is not None:
+        params["lead_time_days"] = lead_time
+    res = run_tool("T-R-01", ctx, **params)
+    if res.ok:
+        route = "HAS_RECO" if res.data.get("recommended_quantity", 0) > 0 else "NO_RECO"
+        return WorkflowResult(
+            formal_result=res.data, route_status=route,
+            status="completed",
+            confirmation_required=(route == "HAS_RECO"),   # 有补货建议 → 需确认（Spec-1 §9.2）
+        )
+    if res.error_code == "DATA_UNAVAILABLE":
+        return WorkflowResult(
+            formal_result={"error_detail": res.error_detail},
+            route_status="UNDETERMINED", status="undetermined",
+        )
+    return WorkflowResult(
+        formal_result={"error_code": res.error_code, "error_detail": res.error_detail},
+        route_status=f"ERROR({res.error_code})", status="error",
+    )
+
+
+# ---- OP-04：缺货风险（T-A-07）----
+
+def _op04(ctx, sku_code: str, forecast_days: int | None) -> WorkflowResult:
+    params = {"sku_code": sku_code}
+    if forecast_days is not None:
+        params["forecast_days"] = forecast_days
+    res = run_tool("T-A-07", ctx, **params)
+    if res.ok:
+        route = "HAS_RISK" if res.data.get("risk_level") == "HIGH" else "NO_RISK"
+        return WorkflowResult(formal_result=res.data, route_status=route, status="completed")
+    if res.error_code == "DATA_UNAVAILABLE":
+        return WorkflowResult(
+            formal_result={"error_detail": res.error_detail},
+            route_status="UNDETERMINED", status="undetermined",
+        )
+    return WorkflowResult(
+        formal_result={"error_code": res.error_code, "error_detail": res.error_detail},
+        route_status=f"ERROR({res.error_code})", status="error",
+    )
+
+
+def run_workflow(wf_input: WorkflowInput) -> WorkflowResult:
+    """按 intent 分发到对应 workflow 执行器；未知 workflow → error。"""
+    ctx = ops_ctx(wf_input.store_id)
+    if wf_input.intent == "restock_recommendation":
+        return _op05(
+            ctx,
+            sku_code=wf_input.slots.get("sku_code", ""),
+            horizon_days=wf_input.slots.get("horizon_days"),
+            lead_time=wf_input.slots.get("lead_time_days"),
+        )
+    if wf_input.intent == "stockout_risk":
+        return _op04(ctx, sku_code=wf_input.slots.get("sku_code", ""),
+                     forecast_days=wf_input.slots.get("horizon_days"))
+    # 其余 workflow（OP-07/08/03、CS-06/08、ISO）随阶段 4 扩展
+    return WorkflowResult(status="error", formal_result={"error_detail": f"未实现 workflow: {wf_input.intent}"})

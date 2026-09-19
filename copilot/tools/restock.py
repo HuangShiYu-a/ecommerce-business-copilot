@@ -12,14 +12,14 @@ class CalculateRestockRecommendation(Tool):
     category = "Recommendation"
     risk = "MEDIUM"
 
-    def run(self, ctx, sku_id=None, sku_code=None, horizon_days=None, **kw):
+    def run(self, ctx, sku_id=None, sku_code=None, horizon_days=None, lead_time_days=None, **kw):
         if sku_id is None and not sku_code:
             return err(INVALID_INPUT, "需 sku_id 或 sku_code")
         sku = resolve_sku(self.conn, ctx.store_id, sku_id=sku_id, sku_code=sku_code)
         if sku is None:
             return err(NOT_FOUND, "SKU 不存在")
         result = restock_recommendation(self.conn, sku, ctx.store_id, self._as_of(),
-                                        horizon_days=horizon_days)
+                                        horizon_days=horizon_days, lead_time_days=lead_time_days)
         if "undetermined" in result:
             return err(DATA_UNAVAILABLE, result["undetermined"])
         if "error" in result:

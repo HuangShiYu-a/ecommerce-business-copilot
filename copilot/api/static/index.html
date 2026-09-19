@@ -4,36 +4,45 @@
   <meta charset="UTF-8">
   <title>E-commerce Business Copilot</title>
   <style>
-    body { font-family: system-ui, "Microsoft YaHei", sans-serif; margin: 2rem; max-width: 720px; }
+    body { font-family: system-ui, "Microsoft YaHei", sans-serif; margin: 2rem; max-width: 760px; }
     h1 { font-size: 1.2rem; }
     input[type=text] { width: 100%; padding: .5rem; box-sizing: border-box; }
-    pre { background: #f6f8fa; padding: 1rem; white-space: pre-wrap; word-break: break-word; }
     .row { margin: .5rem 0; display: flex; gap: .5rem; align-items: center; }
-    button { padding: .4rem .9rem; cursor: pointer; }
+    #log { margin-top: 1rem; }
+    .turn { margin: .4rem 0; padding: .6rem; border-radius: 6px; white-space: pre-wrap; }
+    .u { background: #eef3fb; }
+    .a { background: #f6f8fa; }
     #confirmBar { display: none; }
   </style>
 </head>
 <body>
   <h1>E-commerce Business Copilot</h1>
-  <div>
-    <input id="msg" type="text" value="帮我看看 SKU_01_STOCKOUT_01 需不需要补货" />
-  </div>
   <div class="row">
+    <select id="role">
+      <option value="operations">运营</option>
+      <option value="customer_service">客服</option>
+    </select>
     <select id="store">
       <option value="1">Store 01</option>
       <option value="2">Store 02</option>
     </select>
-    <button id="send">发送</button>
+    <button id="newSession">新会话</button>
   </div>
-  <div class="row" id="confirmBar">
+  <div>
+    <input id="msg" type="text" value="SKU_01_STOCKOUT_01 库存多少" />
+  </div>
+  <div class="row">
+    <button id="send">发送</button>
+    <span id="sessionLabel"></span>
+  </div>
+  <div id="confirmBar" class="row">
     <span id="confirmText"></span>
     <button id="accept">确认</button>
     <button id="reject">拒绝</button>
   </div>
-  <pre id="out">等待输入…</pre>
+  <div id="log"></div>
   <script>
-    let threadId = null;
-    const show = (obj) => { out.textContent = JSON.stringify(obj, null, 2); };
+    let sessionId = null;
 
     async function post(path, body) {
       const r = await fetch(path, {
@@ -44,37 +53,44 @@
       return r.json();
     }
 
-    async function onSend() {
+    function render(turn) {
+      const div = document.createElement("div");
+      div.className = turn.role === "user" ? "turn u" : "turn a";
+      div.textContent = turn.role === "user" ? "👤 " + turn.content : "🤖 " + turn.content;
+      log.appendChild(div);
+      log.scrollTop = log.scrollHeight;
+    }
+
+    async function createSession() {
+      const s = await post("/api/session", { user_id: 1, role: role.value, store_id: Number(store.value) });
+      sessionId = s.session_id;
+      sessionLabel.textContent = "会话 " + sessionId;
+      log.innerHTML = "";
       confirmBar.style.display = "none";
-      out.textContent = "请求中…";
+      render({ role: "assistant", content: s.message });
+    }
+
+    async function sendMsg(text) {
+      if (!sessionId) await createSession();
+      confirmBar.style.display = "none";
+      render({ role: "user", content: text });
       const res = await post("/api/agent", {
-        message: msg.value,
-        store_id: Number(store.value),
+        session_id: sessionId, user_id: 1, role: role.value,
+        store_id: Number(store.value), message: text,
       });
-      if (res.confirm_needed) {
-        threadId = res.thread_id;
-        confirmText.textContent = res.message + "（是否确认？）";
+      render({ role: "assistant", content: res.message });
+      if (res.needs_user_input) {
         confirmBar.style.display = "flex";
-        out.textContent = JSON.stringify(res, null, 2);
-      } else {
-        threadId = null;
-        show(res);
+        confirmText.textContent = "需要确认：";
       }
     }
 
-    async function onDecision(decision) {
-      if (!threadId) return;
-      confirmBar.style.display = "none";
-      out.textContent = "处理中…";
-      const res = await post("/api/confirm", { thread_id: threadId, decision });
-      threadId = null;
-      show(res);
-    }
-
-    send.onclick = onSend;
-    accept.onclick = () => onDecision("accepted");
-    reject.onclick = () => onDecision("rejected");
-    msg.onkeydown = (e) => { if (e.key === "Enter") onSend(); };
+    newSession.onclick = createSession;
+    send.onclick = () => sendMsg(msg.value);
+    accept.onclick = () => sendMsg("确认");
+    reject.onclick = () => sendMsg("拒绝");
+    msg.onkeydown = (e) => { if (e.key === "Enter") sendMsg(msg.value); };
+    createSession();
   </script>
 </body>
 </html>

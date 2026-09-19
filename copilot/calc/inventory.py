@@ -67,13 +67,18 @@ def inventory_row(conn, sku_id: int, store_id: int) -> dict | None:
 
 
 def restock_recommendation(conn, sku: dict, store_id: int, as_of: str,
-                           horizon_days: int | None = None) -> dict:
-    """返回补货建议或 {'undetermined': reason} / {'error': code}。"""
+                           horizon_days: int | None = None,
+                           lead_time_days: int | None = None) -> dict:
+    """返回补货建议或 {'undetermined': reason} / {'error': code}。
+
+    horizon_days / lead_time_days 为参数覆盖（参数驱动结论，口径不变）；
+    未提供时回退 store_configs。
+    """
     inv = inventory_row(conn, sku["id"], store_id)
     if inv is None:
         return {"error": "NOT_FOUND"}
 
-    lead_time = config_int(conn, store_id, "inventory.lead_time_days")
+    lead_time = lead_time_days if lead_time_days is not None else config_int(conn, store_id, "inventory.lead_time_days")
     if lead_time is None:
         return {"undetermined": "MISSING_LEAD_TIME_CONFIG"}
 
