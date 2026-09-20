@@ -217,9 +217,13 @@ def tool_node(state: AgentRuntimeState) -> dict:
     intent = state["execution"]["intent"]
     entities = state["routing"]["entities"]
     tool_id = _TOOL_BY_INTENT.get(intent, "")
+    if intent == "knowledge_query":
+        params = {"query": state.get("message", "")}   # 知识检索用整句提问，非实体槽
+    else:
+        params = entities
     exec_ = _emit(state["execution"], "tool_called", "tool",
-                  payload={"tool": tool_id, "arguments": entities})
-    res = run_tool(tool_id, ctx, **entities)
+                  payload={"tool": tool_id, "arguments": params})
+    res = run_tool(tool_id, ctx, **params)
     data = res.data if res.ok else {"error_code": res.error_code, "error_detail": res.error_detail}
     exec_ = _emit(exec_, "tool_completed", "tool", status="success" if res.ok else "error",
                   payload={"result": data})
@@ -307,6 +311,12 @@ def _draft_direct(intent: str, result: dict) -> str:
     if intent == "inventory_query":
         return (f"SKU {result.get('sku_code')} 当前可用库存 {result.get('available_qty')} 件"
                 f"（安全库存 {result.get('safety_stock')}）。")
+    if intent == "knowledge_query":
+        results = result.get("results", [])
+        if not results:
+            return "未检索到相关业务知识。"
+        lines = [f"· {r['title']}（{r.get('section','')}）" for r in results[:3]]
+        return "检索到相关业务知识：\n" + "\n".join(lines)
     return f"查询结果：{result}"
 
 
@@ -326,7 +336,7 @@ def _draft_workflow(wr: dict) -> str:
     return f"执行结果：{route}"
 
 
-_TOOL_BY_INTENT = {"inventory_query": "T-Q-03"}
+_TOOL_BY_INTENT = {"inventory_query": "T-Q-03", "knowledge_query": "T-K-01"}
 
 
 def _default_checkpointer():

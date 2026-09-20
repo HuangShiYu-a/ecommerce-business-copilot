@@ -110,6 +110,13 @@ def test_continue_retry_after_reject(runtime):
     assert "确认" in r3["message"]
 
 
+def test_knowledge_query_via_orchestrator(runtime):
+    """knowledge_query 意图经 orchestrator 执行 T-K-01（RAG 集成）。"""
+    r = _turn(runtime, "t_kq", "查询一下运营政策")
+    assert r["status"] == "completed"
+    assert "检索到" in r["message"] or "运营巡检" in r["message"]
+
+
 def test_postgres_persistence():
     """PostgresSaver 持久化：会话跨 graph 实例存活（Spec-2）。"""
     from copilot.runtime.store import close_session, get_session
