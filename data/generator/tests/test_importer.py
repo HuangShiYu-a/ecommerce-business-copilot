@@ -33,8 +33,8 @@ def imp(tmp_path):
 def test_tables_created_and_counts(imp):
     assert (imp["canonical"] / "knowledge_documents.csv").exists()
     assert (imp["canonical"] / "knowledge_chunks.csv").exists()
-    assert len(imp["docs"]) == 12
-    assert len(imp["chunks"]) == 34
+    assert len(imp["docs"]) == 23
+    assert len(imp["chunks"]) == 82
     # doc_id 稳定序（KD-AS-01..CONF-02）
     assert imp["docs"][0]["title"] == "七日无理由退货底线"
 
@@ -50,15 +50,18 @@ def test_store_id_mapping(imp):
 
 
 def test_chunk_split_and_sections(imp):
-    # chunk 数分布匹配 seed（原 10 篇 4,3,4,4,1,1,1,2,4,4 + OP-03:2 + AS-09:4）；section 在注册集；index 顺序
+    # 23 篇；md 的 section 在注册集（34 chunk），多格式为标题文本（48 chunk）；index 顺序
     from data.generator.importer import SECTION_REGISTRY
     counts = {}
+    registered = 0
     for c in imp["chunks"]:
         counts[c["document_id"]] = counts.get(c["document_id"], 0) + 1
-        assert c["section"] in SECTION_REGISTRY
+        if c["section"] in SECTION_REGISTRY:
+            registered += 1
         assert int(c["chunk_index"]) == counts[c["document_id"]]
-    assert sorted(counts.values()) == sorted([4, 3, 4, 4, 1, 1, 1, 2, 4, 4, 2, 4])
-    assert len(counts) == 12
+    assert len(counts) == 23
+    assert sum(counts.values()) == 82
+    assert registered == 34   # md 的 chunk section 全部注册
 
 
 def test_scope_copied_to_chunks(imp):

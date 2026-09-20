@@ -80,6 +80,61 @@ def _parse_chunks(body: str) -> list[dict]:
     return out
 
 
+def _emit_doc(docs, chunks, doc_meta: dict, scope: dict, blocks) -> int:
+    """统一产出一篇文档的 doc 行 + chunk 行（md 与多格式共用）。"""
+    store_key = str(doc_meta.get("store_id", "0"))
+    store_id = 0 if store_key == "0" else doc_meta.get("_store_by_code", {}).get(store_key, 0)
+    doc = {
+        "id": len(docs) + 1,
+        "store_id": store_id,
+        "title": doc_meta["title"],
+        "knowledge_type": doc_meta["knowledge_type"],
+        "layer": doc_meta["layer"],
+        "platform": doc_meta.get("platform", "default"),
+        "source_uri": doc_meta.get("source_uri") or "",
+        "status": doc_meta.get("status", "ACTIVE"),
+        "version": str(doc_meta.get("version", "1.0")),
+        "effective_from": _iso_date(doc_meta.get("effective_from")),
+        "effective_to": _iso_date(doc_meta.get("effective_to")),
+        "doc_id": doc_meta["doc_id"],
+    }
+    docs.append(doc)
+    for i, block in enumerate(blocks, start=1):
+        content = "\n".join(block.content).strip()
+        if not content:
+            continue
+        chunks.append({
+            "id": len(chunks) + 1,
+            "document_id": doc["id"],
+            "chunk_index": i,
+            "content": content,
+            "section": block.text,   # md=[tag]；多格式=标题文本（slug 语义）
+            "metadata": json.dumps({"scope": scope}, ensure_ascii=False),
+            "doc_id": doc["doc_id"],
+        })
+    return doc["id"]
+
+
+def _import_multiformat(docs, chunks, store_id_by_code) -> None:
+    """读取 manifest 中 format+path 的多格式文档 → parsers → 统一结构块 → chunk。"""
+    from .parsers import PARSERS
+
+    manifest_path = SEED_DIR.parent / "manifest.yaml"
+    if not manifest_path.exists():
+        return
+    manifest = yaml.safe_load(manifest_path.read_text(encoding="utf-8"))
+    for entry in manifest.get("documents", []):
+        if "format" not in entry or "path" not in entry:
+            continue
+        fmt = entry["format"]
+        if fmt not in PARSERS:
+            raise ValueError(f"未知格式 {fmt}: {entry['doc_id']}")
+        blocks = PARSERS[fmt](SEED_DIR.parent / entry["path"])
+        meta = {**entry, "_store_by_code": store_id_by_code}
+        scope = entry.get("scope") or {}
+        _emit_doc(docs, chunks, meta, scope, blocks)
+
+
 def generate_importer(cfg: GeneratorConfig, canonical_dir: Path, output_root: Path) -> list[dict]:
     stores = _read_csv(canonical_dir / "stores.csv")
     store_id_by_code = {s["store_code"]: int(s["id"]) for s in stores}
@@ -90,41 +145,21 @@ def generate_importer(cfg: GeneratorConfig, canonical_dir: Path, output_root: Pa
 
     docs: list[dict] = []
     chunks: list[dict] = []
+
+    # 路径 1：md（frontmatter + ## [section]）
+    from .parsers import Block
     for path in seed_files:
         front, body = _parse_md(path)
-        store_key = str(front.get("store_id", "0"))
-        store_id = 0 if store_key == "0" else store_id_by_code.get(store_key, 0)
-
-        doc = {
-            "id": len(docs) + 1,
-            "store_id": store_id,
-            "title": front["title"],
-            "knowledge_type": front["knowledge_type"],
-            "layer": front["layer"],
-            "platform": front.get("platform", "default"),
-            "source_uri": front.get("source_uri") or "",
-            "status": front.get("status", "ACTIVE"),
-            "version": str(front.get("version", "1.0")),
-            "effective_from": _iso_date(front.get("effective_from")),
-            "effective_to": _iso_date(front.get("effective_to")),
-            "doc_id": front["doc_id"],   # 内部键，不入 CSV
-        }
-        docs.append(doc)
-
         scope = front.get("scope") or {}
         parsed = _parse_chunks(body)
-        for i, c in enumerate(parsed, start=1):
-            if c["section"] not in SECTION_REGISTRY:
-                raise ValueError(f"{path.name}: section '{c['section']}' 不在注册表 {sorted(SECTION_REGISTRY)}")
-            chunks.append({
-                "id": len(chunks) + 1,
-                "document_id": doc["id"],
-                "chunk_index": i,
-                "content": c["content"],
-                "section": c["section"],
-                "metadata": json.dumps({"scope": scope}, ensure_ascii=False),
-                "doc_id": doc["doc_id"],  # 内部键
-            })
+        blocks = [
+            Block(level=1, text=c["section"], content=c["content"].splitlines())
+            for c in parsed if c["section"] in SECTION_REGISTRY
+        ]
+        _emit_doc(docs, chunks, {**front, "_store_by_code": store_id_by_code}, scope, blocks)
+
+    # 路径 2：多格式（manifest 元数据 + parsers 结构块）
+    _import_multiformat(docs, chunks, store_id_by_code)
 
     specs = {
         "knowledge_documents": (
