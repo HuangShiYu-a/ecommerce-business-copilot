@@ -55,3 +55,42 @@ def test_catalog_has_tk01():
     from copilot.tool import effective_catalog
     ids = {t["tool_id"] for t in effective_catalog("customer_service")}
     assert "T-K-01" in ids   # 客服可用知识检索
+
+
+# ---- R5 规则消解 + 黄金问答 ----
+
+def test_conflict_pair_rule_conflict():
+    """R5：CONF 对（7日 vs 15日）在带 tag 上下文下 → RULE_CONFLICT。"""
+    from copilot.rag import resolve_rules
+    with connect() as conn:
+        r = resolve_rules(conn, "退货窗口几天", 1, scope={"tags": ["apparel-conflict-test"]})
+    assert r["status"] == "RULE_CONFLICT"
+    assert set(r["conflicts"][0]["values"]) == {"7日", "15日"}
+
+
+def test_resolve_normal_no_conflict():
+    """常规查询（无冲突 tag）→ resolved，CONF 对不参与。"""
+    from copilot.rag import resolve_rules
+    with connect() as conn:
+        r = resolve_rules(conn, "无理由退货几天", 1)
+    assert r["status"] == "resolved"
+
+
+def test_rag_gold_all_hit():
+    """黄金问答全量：expect_doc 命中 / expect 状态匹配。"""
+    from pathlib import Path
+    import yaml
+    from copilot.rag import resolve_rules
+
+    gold_path = (Path(__file__).resolve().parent.parent.parent / "data" / "eval-cases"
+                 / "rag_gold.yaml")
+    gold = yaml.safe_load(gold_path.read_text(encoding="utf-8"))
+    with connect() as conn:
+        for case in gold["cases"]:
+            r = resolve_rules(conn, case["query"], case["store_id"],
+                              scope=case.get("scope"))
+            if "expect" in case:
+                assert r["status"] == case["expect"], case
+            else:
+                titles = [x["title"] for x in r["results"]]
+                assert case["expect_doc"] in titles, f"{case['id']}: {case['query']} 未命中"

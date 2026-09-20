@@ -1,0 +1,36 @@
+# RAG 黄金问答（R5.2，Spec-3 §5 rag_gold.yaml）
+# 每条：query + store_id + 期望命中文档（或 R5 冲突状态）
+cases:
+  - id: rg-001
+    query: "无理由退货窗口几天"
+    store_id: 1
+    expect_doc: "七日无理由退货底线"
+  - id: rg-002
+    query: "耳机可以退货吗"
+    store_id: 1
+    expect_doc: "店铺补充售后政策（STORE_01）"
+  - id: rg-003
+    query: "物流时效承诺政策"
+    store_id: 1
+    expect_doc: "物流时效承诺政策 v2.0（现行）"
+  - id: rg-004
+    query: "退货窗口几天"
+    store_id: 1
+    scope: {tags: ["apparel-conflict-test"]}
+    expect: "RULE_CONFLICT"
+  - id: rg-005
+    query: "服装贴身衣物可以退货吗"
+    store_id: 1
+    expect_doc: "例外商品/不可退类目"
+  - id: rg-006
+    query: "滞销商品怎么处理"
+    store_id: 1
+    expect_doc: "滞销商品处理规则"
+  - id: rg-007
+    query: "物流异常延误怎么办"
+    store_id: 1
+    expect_doc: "物流异常处理 SOP"
+  - id: rg-008
+    query: "库存怎么管理"
+    store_id: 1
+    expect_doc: "库存管理政策"
