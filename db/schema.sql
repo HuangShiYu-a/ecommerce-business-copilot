@@ -355,7 +355,7 @@ CREATE TABLE IF NOT EXISTS knowledge.knowledge_chunks (
     chunk_index INTEGER,
     content TEXT NOT NULL,
     section VARCHAR(128),
-    embedding vector(1536),
+    embedding vector(1024),   -- bge-m3（R3，Q1 定案）
     metadata JSONB,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
