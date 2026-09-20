@@ -66,3 +66,169 @@ documents:
     author: "user"
     reviewed_by: "user"
     notes: "eval 夹具：SC-CS08-007 冲突对 B（15 日窗口）；scope include apparel-conflict-test"
+  # ---- 多格式文档（R1.2；元数据在 manifest，正文在 docs/）----
+  - doc_id: KD-AS-05
+    format: pdf
+    path: docs/pdf/KD-AS-05.pdf
+    title: 退货退款政策总则
+    knowledge_type: after_sales
+    layer: platform
+    platform: default
+    store_id: 0
+    status: ACTIVE
+    version: "1.0"
+    effective_from: "2026-01-01"
+    effective_to: null
+    family: null
+    scope: { category_codes: [], include_tags: [], exclude_tags: [] }
+    notes: "流程性总则；法定/运费引用 AS-01，类目引用 AS-02，完好引用 AS-03（不重写）"
+  - doc_id: KD-LG-02
+    format: pdf
+    path: docs/pdf/KD-LG-02.pdf
+    title: 物流时效承诺政策 v1.0（已废止）
+    knowledge_type: logistics
+    layer: platform
+    platform: default
+    store_id: 0
+    status: ACTIVE
+    version: "1.0"
+    effective_from: "2026-01-01"
+    effective_to: "2026-08-31"
+    family: KD-LG
+    scope: { category_codes: [], include_tags: [], exclude_tags: [] }
+    notes: "版本链 A（已过期，R1 过滤）；承诺框架不写时效数值（引用 LG-01）"
+  - doc_id: KD-LG-03
+    format: pdf
+    path: docs/pdf/KD-LG-03.pdf
+    title: 物流时效承诺政策 v2.0（现行）
+    knowledge_type: logistics
+    layer: platform
+    platform: default
+    store_id: 0
+    status: ACTIVE
+    version: "2.0"
+    effective_from: "2026-09-01"
+    effective_to: null
+    family: KD-LG
+    scope: { category_codes: [], include_tags: [], exclude_tags: [] }
+    notes: "版本链 B（现行）；与 LG-02 同 family（R1 版本链演示）"
+  - doc_id: KD-INV-02
+    format: pdf
+    path: docs/pdf/KD-INV-02.pdf
+    title: 库存管理政策
+    knowledge_type: inventory
+    layer: platform
+    platform: default
+    store_id: 0
+    status: ACTIVE
+    version: "1.0"
+    effective_from: "2026-01-01"
+    effective_to: null
+    family: null
+    scope: { category_codes: [], include_tags: [], exclude_tags: [] }
+    notes: "库存分类/盘点/口径；备货原则引用 INV-01（不重写）"
+  - doc_id: KD-AS-06
+    format: html
+    path: docs/html/KD-AS-06.html
+    title: 售后处理 SOP
+    knowledge_type: after_sales
+    layer: platform
+    platform: default
+    store_id: 0
+    status: ACTIVE
+    version: "1.0"
+    effective_from: "2026-01-01"
+    effective_to: null
+    family: null
+    scope: { category_codes: [], include_tags: [], exclude_tags: [] }
+    notes: "流程指引；资格规则引用 AS-01/02/03（不重写）"
+  - doc_id: KD-LG-04
+    format: html
+    path: docs/html/KD-LG-04.html
+    title: 物流异常处理 SOP
+    knowledge_type: logistics
+    layer: platform
+    platform: default
+    store_id: 0
+    status: ACTIVE
+    version: "1.0"
+    effective_from: "2026-01-01"
+    effective_to: null
+    family: null
+    scope: { category_codes: [], include_tags: [], exclude_tags: [] }
+    notes: "异常处理流程；时效引用 LG-01（不重写）"
+  - doc_id: KD-OP-02
+    format: html
+    path: docs/html/KD-OP-02.html
+    title: 运营巡检 SOP
+    knowledge_type: operations
+    layer: platform
+    platform: default
+    store_id: 0
+    status: ACTIVE
+    version: "1.0"
+    effective_from: "2026-01-01"
+    effective_to: null
+    family: null
+    scope: { category_codes: [], include_tags: [], exclude_tags: [] }
+    notes: "巡检流程；健康度引用 OP-01（不重写）"
+  - doc_id: KD-AS-07
+    format: html
+    path: docs/html/KD-AS-07.html
+    title: 退款审核 SOP
+    knowledge_type: after_sales
+    layer: platform
+    platform: default
+    store_id: 0
+    status: ACTIVE
+    version: "1.0"
+    effective_from: "2026-01-01"
+    effective_to: null
+    family: null
+    scope: { category_codes: [], include_tags: [], exclude_tags: [] }
+    notes: "退款审核流程；金额/凭证引用 AS-01/03/09（不重写）"
+  - doc_id: KD-CS-01
+    format: docx
+    path: docs/docx/KD-CS-01.docx
+    title: 客服话术手册
+    knowledge_type: customer_service
+    layer: platform
+    platform: default
+    store_id: 0
+    status: ACTIVE
+    version: "1.0"
+    effective_from: "2026-01-01"
+    effective_to: null
+    family: null
+    scope: { category_codes: [], include_tags: [], exclude_tags: [] }
+    notes: "话术，不重写政策；新增 customer_service 域"
+  - doc_id: KD-CS-02
+    format: docx
+    path: docs/docx/KD-CS-02.docx
+    title: 工单操作手册
+    knowledge_type: customer_service
+    layer: platform
+    platform: default
+    store_id: 0
+    status: ACTIVE
+    version: "1.0"
+    effective_from: "2026-01-01"
+    effective_to: null
+    family: null
+    scope: { category_codes: [], include_tags: [], exclude_tags: [] }
+    notes: "工单创建/流转/升级；引用 AS-06/LG-04/AS-07 流程"
+  - doc_id: KD-AS-08
+    format: docx
+    path: docs/docx/KD-AS-08.docx
+    title: 售后质检培训
+    knowledge_type: after_sales
+    layer: platform
+    platform: default
+    store_id: 0
+    status: ACTIVE
+    version: "1.0"
+    effective_from: "2026-01-01"
+    effective_to: null
+    family: null
+    scope: { category_codes: [], include_tags: [], exclude_tags: [] }
+    notes: "质检/培训标准，新内容"

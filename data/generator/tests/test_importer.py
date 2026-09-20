@@ -1,4 +1,4 @@
-"""P6 / S3.5 Knowledge 导入器门禁测试：10 篇 / 28 chunks / store_id 映射 / 切块与 section / scope 复制 / 夹具容错 / 生命周期窗。"""
+"""P6 / S3.5 Knowledge 导入器门禁测试：12 篇 md / 34 chunks / store_id 映射 / 切块与 section / scope 复制 / 夹具容错 / 生命周期窗。"""
 import csv
 import json
 from datetime import date, datetime
@@ -33,8 +33,8 @@ def imp(tmp_path):
 def test_tables_created_and_counts(imp):
     assert (imp["canonical"] / "knowledge_documents.csv").exists()
     assert (imp["canonical"] / "knowledge_chunks.csv").exists()
-    assert len(imp["docs"]) == 10
-    assert len(imp["chunks"]) == 28
+    assert len(imp["docs"]) == 12
+    assert len(imp["chunks"]) == 34
     # doc_id 稳定序（KD-AS-01..CONF-02）
     assert imp["docs"][0]["title"] == "七日无理由退货底线"
 
@@ -50,15 +50,15 @@ def test_store_id_mapping(imp):
 
 
 def test_chunk_split_and_sections(imp):
-    # chunk 数分布匹配 seed（KD-AS-01..CONF-02 = 4,3,4,4,1,1,1,2,4,4）；section 在注册集；index 顺序
+    # chunk 数分布匹配 seed（原 10 篇 4,3,4,4,1,1,1,2,4,4 + OP-03:2 + AS-09:4）；section 在注册集；index 顺序
     from data.generator.importer import SECTION_REGISTRY
     counts = {}
     for c in imp["chunks"]:
         counts[c["document_id"]] = counts.get(c["document_id"], 0) + 1
         assert c["section"] in SECTION_REGISTRY
         assert int(c["chunk_index"]) == counts[c["document_id"]]
-    assert sorted(counts.values()) == sorted([4, 3, 4, 4, 1, 1, 1, 2, 4, 4])
-    assert len(counts) == 10
+    assert sorted(counts.values()) == sorted([4, 3, 4, 4, 1, 1, 1, 2, 4, 4, 2, 4])
+    assert len(counts) == 12
 
 
 def test_scope_copied_to_chunks(imp):

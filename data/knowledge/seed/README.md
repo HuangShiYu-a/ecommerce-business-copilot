@@ -15,12 +15,21 @@
 ```text
 data/knowledge/seed/
 ├── README.md          # 本约定（K5：文件格式 + 切块约定）
-├── manifest.yaml      # 治理/扩展字段索引（非 DB 列；K3 §6）
-├── KD-AS-01.md        # 一篇一文件：YAML front matter + Markdown 正文
-├── KD-AS-02.md
-├── …                  # 共 10 篇（7 P0-Core + KD-AS-EXP-01 + KD-AS-CONF-01/02）
-└── KD-AS-CONF-02.md
+├── manifest.yaml      # 治理字段 + 多格式文档元数据（R1.2 扩展，K3 §6）
+├── md/                # 一篇一文件：YAML front matter + Markdown 正文（12 篇）
+│   ├── KD-AS-01.md    # 原 10 篇迁移至此（R1.1）
+│   ├── KD-OP-03.md    # 新增 md（R1.2）
+│   └── KD-AS-09.md
+└── docs/              # 多格式文档（R1.2；元数据在 manifest.yaml）
+    ├── pdf/   KD-AS-05.pdf, KD-LG-02.pdf, KD-LG-03.pdf, KD-INV-02.pdf
+    ├── html/  KD-AS-06.html, KD-LG-04.html, KD-OP-02.html, KD-AS-07.html
+    └── docx/  KD-CS-01.docx, KD-CS-02.docx, KD-AS-08.docx
 ```
+
+**格式说明（R1.2）**：
+- `md/`：md 正文，元数据在 **front matter**（导入器读 front matter）。
+- `docs/`：PDF/HTML/DOCX，**元数据在 manifest.yaml**（`format/path/layer/effective/scope` 等，导入器读 manifest）；正文标题层级供结构感知切块（§7.1 切分细则）。
+- 共 **23 篇**（12 md + 11 多格式）。
 
 ---
 

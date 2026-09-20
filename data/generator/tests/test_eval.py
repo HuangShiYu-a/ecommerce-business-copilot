@@ -62,6 +62,6 @@ def test_eval_has_s12a_context(ev):
 
 def test_eval_has_knowledge_and_conflict_order(ev):
     docs = _read(ev / "eval" / "canonical" / "knowledge_documents.csv")
-    assert len(docs) == 10
+    assert len(docs) == 12
     orders = {o["order_no"] for o in _read(ev / "eval" / "canonical" / "orders.csv")}
     assert "ORD_01_CS0807_001" in orders

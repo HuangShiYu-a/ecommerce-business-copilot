@@ -325,8 +325,8 @@ def _knowledge_lifecycle(d, as_of) -> dict:
     exp = next((doc for doc in d["knowledge_documents"] if "已失效" in doc["title"]), None)
     if exp and in_window(exp):
         issues.append("EXP 夹具不应在有效窗内")
-    if len(titles) != 10:
-        issues.append(f"文档数 {len(titles)} != 10")
+    if len(titles) != 12:
+        issues.append(f"文档数 {len(titles)} != 12")
     return _ck("knowledge_lifecycle", "Knowledge 生命周期窗", "P0", not issues, issues)
 
 

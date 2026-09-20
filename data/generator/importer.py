@@ -24,12 +24,13 @@ from .config import GeneratorConfig
 from .master import _write_csv
 from .transactions import _read_csv
 
-SEED_DIR = Path(__file__).resolve().parent.parent / "knowledge" / "seed"
+SEED_DIR = Path(__file__).resolve().parent.parent / "knowledge" / "seed" / "md"
 
 SECTION_REGISTRY = {
     "return", "non_returnable", "condition",
     "delivery", "delay",
     "health_dimensions", "replenishment_policy",
+    "slow_moving", "special",   # R1.2：KD-OP-03 / KD-AS-09
 }
 
 SECTION_RE = re.compile(r"^## \[([^\]]+)\]\s*(.*)")
