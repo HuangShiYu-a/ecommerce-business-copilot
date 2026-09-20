@@ -111,8 +111,11 @@ def resolve_rules(conn, query_text: str, store_id: int,
                 {"layer": r["layer"], "title": r["title"], "similarity": r["similarity"]})
 
     conflicts = []
+    resolved: dict[str, str] = {}
     for term, values in claims.items():
         if len(values) <= 1:
+            if values:
+                resolved[term] = next(iter(values))
             continue
         # R4：按值取最高权威层；最高层出现多个值 → R5 冲突
         by_layer = {v: max(LAYER_PRIORITY.get(d["layer"], 0) for d in ds) for v, ds in values.items()}
@@ -121,8 +124,10 @@ def resolve_rules(conn, query_text: str, store_id: int,
         if len(top_values) > 1:
             conflicts.append({"term": term, "values": top_values,
                               "reason": "RULE_CONFLICT", "candidates": values})
-        # else：最高权威层唯一 → R4 消解（保留其值，不冲突）
+        else:
+            # 最高权威层唯一 → R4 消解（保留其值，不冲突）
+            resolved[term] = top_values[0]
 
     if conflicts:
         return {"status": "RULE_CONFLICT", "conflicts": conflicts, "results": rows}
-    return {"status": "resolved", "results": rows}
+    return {"status": "resolved", "results": rows, "resolved": resolved}

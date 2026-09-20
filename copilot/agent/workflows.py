@@ -180,6 +180,29 @@ def _cs06(ctx, order_no: str) -> WorkflowResult:
     )
 
 
+# ---- CS-08：退货资格判定（T-A-09，RAG 消解）----
+
+def _cs08(ctx, order_no: str) -> WorkflowResult:
+    from ..tool import run_tool as _rt
+    res = _rt("T-A-09", ctx, order_no=order_no)
+    if res.ok:
+        decision = res.data.get("decision", "undetermined")
+        return WorkflowResult(
+            formal_result=res.data, route_status=decision, status="completed",
+            confirmation_required=(decision == "eligible"),   # eligible → N6 客服确认（WF §5.1）
+        )
+    if res.error_code == "DATA_UNAVAILABLE":
+        return WorkflowResult(formal_result={"error_detail": res.error_detail},
+                              route_status="UNDETERMINED", status="undetermined")
+    if res.error_code == "FORBIDDEN":
+        return WorkflowResult(formal_result={"error_code": "FORBIDDEN", "error_detail": res.error_detail},
+                              route_status="FORBIDDEN", status="error")
+    return WorkflowResult(
+        formal_result={"error_code": res.error_code, "error_detail": res.error_detail},
+        route_status=f"ERROR({res.error_code})", status="error",
+    )
+
+
 def run_workflow(wf_input: WorkflowInput) -> WorkflowResult:
     """按 intent 分发到对应 workflow 执行器；未知 workflow → error。"""
     ctx = ops_ctx(wf_input.store_id)
@@ -204,5 +227,6 @@ def run_workflow(wf_input: WorkflowInput) -> WorkflowResult:
                      category=wf_input.slots.get("category"))
     if wf_input.intent == "fulfillment_delay":
         return _cs06(ctx, order_no=wf_input.slots.get("order_no", ""))
-    # 其余 workflow（CS-08、ISO）随阶段 4 扩展
+    if wf_input.intent == "return_eligibility":
+        return _cs08(ctx, order_no=wf_input.slots.get("order_no", ""))
     return WorkflowResult(status="error", formal_result={"error_detail": f"未实现 workflow: {wf_input.intent}"})

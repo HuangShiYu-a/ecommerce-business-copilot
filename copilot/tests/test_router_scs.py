@@ -28,6 +28,7 @@ INTENT_MESSAGE = {
     "OP-08": "{sku} 销售有没有异常",
     "OP-03": "{sku} 是不是慢销",
     "CS-06": "{order_no} 物流有没有延误",
+    "CS-08": "{order_no} 可以退货吗",
     "ISO": "{order_no} 物流有没有延误",
 }
 
@@ -50,6 +51,10 @@ def _store_id(code: str) -> int:
     return 2 if code == "STORE_02" else 1
 
 
+# 客服角色 workflow（CS-08 等）：guardrails 按 WORKFLOW_ROLES 校验，客服专属需换角色
+CS_ROLE_WORKFLOWS = {"CS-08", "CS-06"}
+
+
 def _data_scs(workflow: str) -> list[dict]:
     return [s for s in SCENARIOS["scenarios"]
             if s["workflow"] == workflow and s["nature"] == "data"]
@@ -59,7 +64,8 @@ def run_sc_route(s: dict) -> dict:
     """构造路由消息 → 走 Runtime → 返回 workflow_result。"""
     g = build_runtime_graph(InMemorySaver())
     msg = _sc_message(s)
-    sess = {"session_id": "sc", "user_id": 3, "role": "operations", "store_id": _store_id(s["store_id"])}
+    role = "customer_service" if s["workflow"] in CS_ROLE_WORKFLOWS else "operations"
+    sess = {"session_id": "sc", "user_id": 3, "role": role, "store_id": _store_id(s["store_id"])}
     out = run_agent(g, f"sc_{s['scenario_id']}", sess, msg)
     return out["state"].get("execution", {}).get("workflow_result", {})
 
@@ -115,6 +121,17 @@ def test_iso_cross_store_forbidden():
     for s in [x for x in SCENARIOS["scenarios"] if x["scenario_id"] == "SC-ISO-001"]:
         wr = run_sc_route(s)
         assert wr.get("route_status") == "FORBIDDEN", f"{s['scenario_id']}: {wr}"
+
+
+def test_cs08_all_data_sc_route():
+    """CS-08 data SC 穿 Router：eligible/ineligible/undetermined（含 006 对照组无断言）。"""
+    for s in _data_scs("CS-08"):
+        if s.get("expected_route") is None:      # SC-CS08-006 预置售后对照，无路由断言
+            continue
+        wr = run_sc_route(s)
+        assert wr.get("route_status") == s["expected_route"], f"{s['scenario_id']}: {wr}"
+        if s.get("expected_reason"):
+            assert s["expected_reason"] in wr.get("formal_result", {}).get("reason_code", ""), s
 
 
 def test_shipping_status_direct_route():

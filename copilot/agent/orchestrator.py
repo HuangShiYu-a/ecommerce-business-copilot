@@ -138,7 +138,8 @@ def router(state: AgentRuntimeState) -> dict:
 # workflow → 允许角色（阶段 4 随各 workflow 扩展；Spec-1 §4.2）
 WORKFLOW_ROLES = {"OP-05": ("operations",), "OP-04": ("operations",), "OP-07": ("operations",),
                   "OP-08": ("operations",), "OP-03": ("operations",),
-                  "CS-06": ("customer_service", "operations")}
+                  "CS-06": ("customer_service", "operations"),
+                  "CS-08": ("customer_service",)}
 
 
 def guardrails(state: AgentRuntimeState) -> dict:
@@ -338,6 +339,10 @@ def _draft_workflow(wr: dict) -> str:
         return f"暂无法判定：{fr.get('error_detail')}。"
     if route == "FORBIDDEN":
         return f"无权访问：{fr.get('error_detail', '跨店数据被隔离')}。"
+    if route in ("eligible", "ineligible", "undetermined"):
+        reason = fr.get("reason_code", route)
+        return (f"退货资格判定：{route}（{reason}）。{fr.get('explanation', '')}"
+                + ("\n\n是否提交退货申请？" if route == "eligible" else ""))
     return f"执行结果：{route}"
 
 

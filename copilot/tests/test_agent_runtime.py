@@ -162,7 +162,7 @@ def test_catalog_all_tools():
     cat = effective_catalog()
     ids = {t["tool_id"] for t in cat}
     assert ids == {"T-Q-03", "T-A-07", "T-R-01", "T-K-01", "T-A-05", "T-A-06", "T-A-04",
-                   "T-A-01", "T-Q-05"}
+                   "T-A-01", "T-Q-05", "T-Q-04", "T-A-09", "T-X-01"}
     tr = next(t for t in cat if t["tool_id"] == "T-R-01")
     assert tr["description"] and tr["input_schema"]["properties"]
 
@@ -171,10 +171,11 @@ def test_catalog_role_filter():
     from copilot.tool import effective_catalog
     cs = {t["tool_id"] for t in effective_catalog("customer_service")}
     ops = {t["tool_id"] for t in effective_catalog("operations")}
-    assert cs == {"T-Q-03", "T-K-01", "T-A-01", "T-Q-05"}   # 客服：库存/知识/物流
+    assert cs == {"T-Q-03", "T-K-01", "T-A-01", "T-Q-05", "T-Q-04", "T-A-09", "T-X-01"}
     assert ops == {"T-Q-03", "T-A-07", "T-R-01", "T-K-01", "T-A-05", "T-A-06", "T-A-04",
-                   "T-A-01", "T-Q-05"}
+                   "T-A-01", "T-Q-05", "T-Q-04", "T-A-09"}
     assert "T-R-01" not in cs                               # 客服不应看见补货工具（Spec-1 §8.7）
+    assert "T-X-01" not in ops                              # 退货申请 Action 仅客服（HIGH）
 
 
 # ---- ISO 跨 store 数据隔离（B5）----

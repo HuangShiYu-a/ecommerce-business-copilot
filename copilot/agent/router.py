@@ -96,7 +96,8 @@ def route_rules(message: str) -> RouterResult:
 
     # 槽位依赖：缺必需槽位 → missing_slots（Spec-1 §9.1）
     missing: list[str] = []
-    if intent in ("order_query", "shipping_status", "fulfillment_delay") and "order_no" not in entities:
+    if intent in ("order_query", "shipping_status", "fulfillment_delay", "return_eligibility") \
+            and "order_no" not in entities:
         missing.append("order_no")
     if intent == "slow_moving":
         # 慢销：单 SKU 校验或类目扫描二选一

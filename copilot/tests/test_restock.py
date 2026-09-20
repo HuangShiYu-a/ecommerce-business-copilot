@@ -89,3 +89,85 @@ def test_sc_runner_op04_route_details():
     assert by_id["SC-OP04-003"]["actual_route"] == "UNDETERMINED"
     assert by_id["SC-OP04-003"]["actual_reason"] == "MISSING_SALES_WINDOW"
     assert by_id["SC-OP04-004"]["actual_route"] == "HAS_RISK"
+
+
+# ---- CS-08（T-A-09 资格三态 / T-X-01 创建退货申请）----
+
+from copilot.context import UserContext
+
+CS_CTX = UserContext(user_id=1, role="customer_service", store_id=1)
+
+
+def test_ta09_eligible_within_window():
+    res = run_tool("T-A-09", CS_CTX, order_no="ORD_01_000438")
+    assert res.ok, res
+    assert res.data["decision"] == "eligible"
+    assert res.data["reason_code"] == "WITHIN_RETURN_WINDOW"
+
+
+def test_ta09_ineligible_expired():
+    res = run_tool("T-A-09", CS_CTX, order_no="ORD_01_000427")
+    assert res.ok, res
+    assert res.data["decision"] == "ineligible"
+    assert res.data["reason_code"] == "RETURN_WINDOW_EXPIRED"
+
+
+def test_ta09_undetermined_missing_signed():
+    res = run_tool("T-A-09", CS_CTX, order_no="ORD_01_000036")
+    assert res.ok, res
+    assert res.data["decision"] == "undetermined"
+    assert res.data["reason_code"] == "MISSING_SIGNED_AT"
+
+
+def test_ta09_rule_conflict():
+    """SC-CS08-007：CONF-01(7日)/CONF-02(15日) 同层冲突 → RULE_CONFLICT → undetermined。"""
+    res = run_tool("T-A-09", CS_CTX, order_no="ORD_01_CS0807_001")
+    assert res.ok, res
+    assert res.data["decision"] == "undetermined"
+    assert res.data["reason_code"] == "RULE_CONFLICT"
+
+
+@pytest.fixture
+def _clean_tx01():
+    yield
+    from copilot.db import connect
+    conn = connect()
+    cur = conn.cursor()
+    cur.execute("DELETE FROM audit_logs WHERE request_id LIKE 'tx01_%'")
+    cur.execute("DELETE FROM after_sales_requests WHERE idempotency_key LIKE 'tx01_%'")
+    conn.commit()
+    cur.close()
+    conn.close()
+
+
+def test_tx01_requires_approval(_clean_tx01):
+    res = run_tool("T-X-01", CS_CTX, order_id=438, item_id=438, quantity=1,
+                   reason="七天无理由", request_id="tx01_noappr")
+    assert res.error_code == "APPROVAL_REQUIRED"
+
+
+def test_tx01_rejected_approval(_clean_tx01):
+    ap = {"approver_id": 5, "approved_at": "2026-09-17", "decision": "rejected"}
+    res = run_tool("T-X-01", CS_CTX, order_id=438, item_id=438, quantity=1,
+                   reason="x", request_id="tx01_rej", approval=ap)
+    assert res.error_code == "APPROVAL_REQUIRED"
+
+
+def test_tx01_over_quantity(_clean_tx01):
+    ap = {"approver_id": 5, "approved_at": "2026-09-17", "decision": "approved"}
+    res = run_tool("T-X-01", CS_CTX, order_id=438, item_id=438, quantity=99,
+                   reason="x", request_id="tx01_over", approval=ap)
+    assert res.error_code == "PRECONDITION_FAILED"
+
+
+def test_tx01_create_and_idempotent(_clean_tx01):
+    ap = {"approver_id": 5, "approved_at": "2026-09-17", "decision": "approved"}
+    r1 = run_tool("T-X-01", CS_CTX, order_id=438, item_id=438, quantity=1,
+                  reason="七天无理由", request_id="tx01_ok", approval=ap)
+    assert r1.ok, r1
+    rid = r1.data["return_request_id"]
+    # 幂等：同一 request_id 重复提交 → 返回同一单
+    r2 = run_tool("T-X-01", CS_CTX, order_id=438, item_id=438, quantity=1,
+                  reason="七天无理由", request_id="tx01_ok", approval=ap)
+    assert r2.ok and r2.data["return_request_id"] == rid
+    assert r2.data.get("idempotent") is True
