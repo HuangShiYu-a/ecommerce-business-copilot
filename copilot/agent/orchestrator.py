@@ -136,7 +136,9 @@ def router(state: AgentRuntimeState) -> dict:
 
 
 # workflow → 允许角色（阶段 4 随各 workflow 扩展；Spec-1 §4.2）
-WORKFLOW_ROLES = {"OP-05": ("operations",), "OP-04": ("operations",)}
+WORKFLOW_ROLES = {"OP-05": ("operations",), "OP-04": ("operations",), "OP-07": ("operations",),
+                  "OP-08": ("operations",), "OP-03": ("operations",),
+                  "CS-06": ("customer_service", "operations")}
 
 
 def guardrails(state: AgentRuntimeState) -> dict:
@@ -216,7 +218,8 @@ def tool_node(state: AgentRuntimeState) -> dict:
     ctx = ops_ctx(session["store_id"])
     intent = state["execution"]["intent"]
     entities = state["routing"]["entities"]
-    tool_id = _TOOL_BY_INTENT.get(intent, "")
+    path = resolve(intent)
+    tool_id = path.target if (path and path.kind == "direct") else ""
     if intent == "knowledge_query":
         params = {"query": state.get("message", "")}   # 知识检索用整句提问，非实体槽
     else:
@@ -333,10 +336,9 @@ def _draft_workflow(wr: dict) -> str:
                 f"可用 {fr.get('available_qty')} 件，约 {fr.get('days_until_stockout')} 天后缺货）。")
     if route == "UNDETERMINED":
         return f"暂无法判定：{fr.get('error_detail')}。"
+    if route == "FORBIDDEN":
+        return f"无权访问：{fr.get('error_detail', '跨店数据被隔离')}。"
     return f"执行结果：{route}"
-
-
-_TOOL_BY_INTENT = {"inventory_query": "T-Q-03", "knowledge_query": "T-K-01"}
 
 
 def _default_checkpointer():

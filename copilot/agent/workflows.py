@@ -53,6 +53,11 @@ def _op05(ctx, sku_code: str, horizon_days: int | None, lead_time: int | None) -
             formal_result={"error_detail": res.error_detail},
             route_status="UNDETERMINED", status="undetermined",
         )
+    if res.error_code == "FORBIDDEN":
+        return WorkflowResult(
+            formal_result={"error_code": "FORBIDDEN", "error_detail": res.error_detail},
+            route_status="FORBIDDEN", status="error",
+        )
     return WorkflowResult(
         formal_result={"error_code": res.error_code, "error_detail": res.error_detail},
         route_status=f"ERROR({res.error_code})", status="error",
@@ -74,6 +79,101 @@ def _op04(ctx, sku_code: str, forecast_days: int | None) -> WorkflowResult:
             formal_result={"error_detail": res.error_detail},
             route_status="UNDETERMINED", status="undetermined",
         )
+    if res.error_code == "FORBIDDEN":
+        return WorkflowResult(
+            formal_result={"error_code": "FORBIDDEN", "error_detail": res.error_detail},
+            route_status="FORBIDDEN", status="error",
+        )
+    return WorkflowResult(
+        formal_result={"error_code": res.error_code, "error_detail": res.error_detail},
+        route_status=f"ERROR({res.error_code})", status="error",
+    )
+
+
+# ---- OP-07：商品健康度（T-A-05）----
+
+def _op07(ctx, sku_code: str, window_days: int | None) -> WorkflowResult:
+    from ..tool import run_tool as _rt
+    params = {"sku_code": sku_code}
+    if window_days is not None:
+        params["window_days"] = window_days
+    res = _rt("T-A-05", ctx, **params)
+    if res.ok:
+        return WorkflowResult(formal_result=res.data, route_status="HEALTHY", status="completed")
+    if res.error_code == "DATA_UNAVAILABLE":
+        return WorkflowResult(formal_result={"error_detail": res.error_detail},
+                              route_status="UNDETERMINED", status="undetermined")
+    if res.error_code == "FORBIDDEN":
+        return WorkflowResult(formal_result={"error_code": "FORBIDDEN", "error_detail": res.error_detail},
+                              route_status="FORBIDDEN", status="error")
+    return WorkflowResult(
+        formal_result={"error_code": res.error_code, "error_detail": res.error_detail},
+        route_status=f"ERROR({res.error_code})", status="error",
+    )
+
+
+# ---- OP-08：销售异常（T-A-06）----
+
+def _op08(ctx, sku_code: str, baseline_policy: str | None) -> WorkflowResult:
+    from ..tool import run_tool as _rt
+    params = {"sku_code": sku_code}
+    if baseline_policy:
+        params["baseline_policy"] = baseline_policy
+    res = _rt("T-A-06", ctx, **params)
+    if res.ok:
+        route = "ANOMALY" if res.data.get("is_anomaly") else "NORMAL"
+        return WorkflowResult(formal_result=res.data, route_status=route, status="completed")
+    if res.error_code == "DATA_UNAVAILABLE":
+        return WorkflowResult(formal_result={"error_detail": res.error_detail},
+                              route_status="UNDETERMINED", status="undetermined")
+    if res.error_code == "FORBIDDEN":
+        return WorkflowResult(formal_result={"error_code": "FORBIDDEN", "error_detail": res.error_detail},
+                              route_status="FORBIDDEN", status="error")
+    return WorkflowResult(
+        formal_result={"error_code": res.error_code, "error_detail": res.error_detail},
+        route_status=f"ERROR({res.error_code})", status="error",
+    )
+
+
+# ---- OP-03：慢销候选筛选（T-A-04 mode=slow_moving）----
+
+def _op03(ctx, sku_code: str | None, category: str | None) -> WorkflowResult:
+    from ..tool import run_tool as _rt
+    params = {"mode": "slow_moving"}
+    if sku_code:
+        params["sku_code"] = sku_code
+    if category:
+        params["category"] = category
+    res = _rt("T-A-04", ctx, **params)
+    if res.ok:
+        route = "HAS_CANDIDATES" if res.data.get("candidates") else "EMPTY"
+        return WorkflowResult(formal_result=res.data, route_status=route, status="completed")
+    if res.error_code == "DATA_UNAVAILABLE":
+        return WorkflowResult(formal_result={"error_detail": res.error_detail},
+                              route_status="UNDETERMINED", status="undetermined")
+    if res.error_code == "FORBIDDEN":
+        return WorkflowResult(formal_result={"error_code": "FORBIDDEN", "error_detail": res.error_detail},
+                              route_status="FORBIDDEN", status="error")
+    return WorkflowResult(
+        formal_result={"error_code": res.error_code, "error_detail": res.error_detail},
+        route_status=f"ERROR({res.error_code})", status="error",
+    )
+
+
+# ---- CS-06：物流履约异常（T-A-01）----
+
+def _cs06(ctx, order_no: str) -> WorkflowResult:
+    from ..tool import run_tool as _rt
+    res = _rt("T-A-01", ctx, order_no=order_no)
+    if res.ok:
+        return WorkflowResult(formal_result=res.data, route_status=res.data.get("status"),
+                              status="completed")
+    if res.error_code == "DATA_UNAVAILABLE":
+        return WorkflowResult(formal_result={"error_detail": res.error_detail},
+                              route_status="UNDETERMINED", status="undetermined")
+    if res.error_code == "FORBIDDEN":
+        return WorkflowResult(formal_result={"error_code": "FORBIDDEN", "error_detail": res.error_detail},
+                              route_status="FORBIDDEN", status="error")
     return WorkflowResult(
         formal_result={"error_code": res.error_code, "error_detail": res.error_detail},
         route_status=f"ERROR({res.error_code})", status="error",
@@ -93,5 +193,16 @@ def run_workflow(wf_input: WorkflowInput) -> WorkflowResult:
     if wf_input.intent == "stockout_risk":
         return _op04(ctx, sku_code=wf_input.slots.get("sku_code", ""),
                      forecast_days=wf_input.slots.get("horizon_days"))
-    # 其余 workflow（OP-07/08/03、CS-06/08、ISO）随阶段 4 扩展
+    if wf_input.intent == "product_health":
+        return _op07(ctx, sku_code=wf_input.slots.get("sku_code", ""),
+                     window_days=wf_input.slots.get("window_days"))
+    if wf_input.intent == "sales_anomaly":
+        return _op08(ctx, sku_code=wf_input.slots.get("sku_code", ""),
+                     baseline_policy=wf_input.slots.get("baseline_policy"))
+    if wf_input.intent == "slow_moving":
+        return _op03(ctx, sku_code=wf_input.slots.get("sku_code"),
+                     category=wf_input.slots.get("category"))
+    if wf_input.intent == "fulfillment_delay":
+        return _cs06(ctx, order_no=wf_input.slots.get("order_no", ""))
+    # 其余 workflow（CS-08、ISO）随阶段 4 扩展
     return WorkflowResult(status="error", formal_result={"error_detail": f"未实现 workflow: {wf_input.intent}"})

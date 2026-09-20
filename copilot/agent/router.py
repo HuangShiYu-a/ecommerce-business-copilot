@@ -20,6 +20,7 @@ INTENT_KEYWORDS: list[tuple[str, tuple[str, ...]]] = [
     ("return_eligibility", ("退货", "退吗", "能不能退", "可退", "售后", "退款")),
     ("restock_recommendation", ("补货", "补仓", "采购", "建议补", "要补")),
     ("stockout_risk", ("缺货", "断货", "会不会卖完", "风险", "够不够卖")),
+    ("fulfillment_delay", ("物流异常", "延误", "超时未送达", "没送到")),
     ("shipping_status", ("物流", "快递", "送到", "到哪", "发货", "配送")),
     ("order_query", ("订单", "ORD_")),
     ("sales_anomaly", ("异常", "骤降", "下滑", "异动", "跌", "暴涨")),
@@ -30,8 +31,12 @@ INTENT_KEYWORDS: list[tuple[str, tuple[str, ...]]] = [
 ]
 
 
+CATEGORY_FRAGMENTS = ["美妆", "服装", "家居", "母婴", "食品", "生鲜", "数码", "电子",
+                      "图书", "定制", "个护", "家纺", "服饰", "玩具", "音像"]
+
+
 def extract_entities(message: str) -> dict:
-    """实体/模式预抽取：SKU / 订单号 / 时间窗。"""
+    """实体/模式预抽取：SKU / 订单号 / 时间窗 / 采购周期 / 类目。"""
     entities: dict = {}
     m = SKU_RE.search(message)
     if m:
@@ -45,6 +50,10 @@ def extract_entities(message: str) -> dict:
     m = LEAD_RE.search(message)
     if m:
         entities["lead_time_days"] = int(m.group(1))
+    for frag in CATEGORY_FRAGMENTS:
+        if frag in message:
+            entities["category"] = frag
+            break
     return entities
 
 
@@ -87,10 +96,14 @@ def route_rules(message: str) -> RouterResult:
 
     # 槽位依赖：缺必需槽位 → missing_slots（Spec-1 §9.1）
     missing: list[str] = []
-    if intent == "order_query" and "order_no" not in entities:
+    if intent in ("order_query", "shipping_status", "fulfillment_delay") and "order_no" not in entities:
         missing.append("order_no")
-    if intent in ("inventory_query", "stockout_risk", "restock_recommendation",
-                  "sales_anomaly", "slow_moving", "product_health"):
+    if intent == "slow_moving":
+        # 慢销：单 SKU 校验或类目扫描二选一
+        if "sku_code" not in entities and "category" not in entities:
+            missing.append("sku_code")
+    elif intent in ("inventory_query", "stockout_risk", "restock_recommendation",
+                    "sales_anomaly", "product_health"):
         if "sku_code" not in entities:
             missing.append("sku_code")
 

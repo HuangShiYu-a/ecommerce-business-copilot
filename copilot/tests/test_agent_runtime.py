@@ -46,6 +46,14 @@ def test_registry_mapping():
     assert not is_known("unknown_intent")
 
 
+def test_registry_intents_complete():
+    """REGISTRY 的每个 intent 都在 INTENTS 枚举中（LLM Router 靠枚举出意图；
+    fulfillment_delay 曾漏枚举导致 live 模式无法路由到 CS-06）。"""
+    from copilot.agent.registry import INTENTS, REGISTRY
+    for intent in REGISTRY:
+        assert intent in INTENTS, f"{intent} 缺失于 INTENTS（LLM 无法输出）"
+
+
 # ---- §8.4 规则路由（dryrun）----
 
 def test_rule_route_stockout_risk():
@@ -153,7 +161,8 @@ def test_catalog_all_tools():
     from copilot.tool import effective_catalog
     cat = effective_catalog()
     ids = {t["tool_id"] for t in cat}
-    assert ids == {"T-Q-03", "T-A-07", "T-R-01", "T-K-01"}
+    assert ids == {"T-Q-03", "T-A-07", "T-R-01", "T-K-01", "T-A-05", "T-A-06", "T-A-04",
+                   "T-A-01", "T-Q-05"}
     tr = next(t for t in cat if t["tool_id"] == "T-R-01")
     assert tr["description"] and tr["input_schema"]["properties"]
 
@@ -162,6 +171,21 @@ def test_catalog_role_filter():
     from copilot.tool import effective_catalog
     cs = {t["tool_id"] for t in effective_catalog("customer_service")}
     ops = {t["tool_id"] for t in effective_catalog("operations")}
-    assert cs == {"T-Q-03", "T-K-01"}                 # 客服：库存查询 + 知识检索
-    assert ops == {"T-Q-03", "T-A-07", "T-R-01", "T-K-01"}
-    assert "T-R-01" not in cs                         # 客服不应看见补货工具（Spec-1 §8.7）
+    assert cs == {"T-Q-03", "T-K-01", "T-A-01", "T-Q-05"}   # 客服：库存/知识/物流
+    assert ops == {"T-Q-03", "T-A-07", "T-R-01", "T-K-01", "T-A-05", "T-A-06", "T-A-04",
+                   "T-A-01", "T-Q-05"}
+    assert "T-R-01" not in cs                               # 客服不应看见补货工具（Spec-1 §8.7）
+
+
+# ---- ISO 跨 store 数据隔离（B5）----
+
+def test_isolation_guard():
+    from copilot.tool import cross_store_param, reference_store
+    assert reference_store("ORD_02_002489") == 2
+    assert reference_store("SKU_02_STOCKOUT_01") == 2
+    assert reference_store("ORD_01_000002") == 1
+    assert reference_store("美妆类目") is None            # 无门店前缀 → 不判定
+    assert cross_store_param(1, {"order_no": "ORD_02_002489"}) == "order_no"   # 跨店 → 拦截
+    assert cross_store_param(2, {"order_no": "ORD_02_002489"}) is None         # 同店 → 放行
+    assert cross_store_param(1, {"sku_code": "SKU_01_NORMAL_01"}) is None      # 同店 → 放行
+    assert cross_store_param(1, {"category": "美妆"}) is None                  # 无前缀 → 放行

@@ -3,9 +3,11 @@
 - Tool 子类实现 run(ctx, **params) -> ToolResult
 - @register_tool 注册到 TOOLS[tool_id]
 - run_tool 负责连接生命周期与异常兜底（→ DEPENDENCY_ERROR）
+- 跨 store 引用守卫（ISO）：ORD_x_/SKU_x_ 前缀编码门店，引用店 ≠ ctx 店 → FORBIDDEN
 """
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from typing import Callable
 
@@ -80,13 +82,43 @@ class Tool:
         return (not cls.allowed_roles) or role in cls.allowed_roles
 
 
+# ---- 跨 store 数据隔离（ISO，B5）----
+
+_STORE_PREFIX_RE = re.compile(r"^(?:ORD|SKU)_(\d+)_")
+
+
+def reference_store(identifier: str) -> int | None:
+    """从标识符前缀解析所属店：ORD_02_* / SKU_02_* → 2；无法解析 → None。"""
+    m = _STORE_PREFIX_RE.match(identifier or "")
+    return int(m.group(1)) if m else None
+
+
+def cross_store_param(store_id: int, params: dict) -> str | None:
+    """扫描参数中的门店引用，找到引用店 ≠ 上下文的参数名；无 → None。
+
+    仅按前缀判定（ORD_x_/SKU_x_）；无法解析前缀的不拦（由 SQL store_id 兜底）。
+    """
+    for k, v in params.items():
+        if isinstance(v, str):
+            owned = reference_store(v)
+            if owned is not None and owned != store_id:
+                return k
+    return None
+
+
 def run_tool(tool_id: str, ctx: UserContext, conn=None, **params) -> ToolResult:
-    """按 tool_id 调用；未传入 conn 则自建并关闭；异常兜底为 DEPENDENCY_ERROR。"""
+    """按 tool_id 调用；未传入 conn 则自建并关闭；异常兜底为 DEPENDENCY_ERROR。
+
+    跨 store 引用在调度前拦截（B5：工具层隔离不变，DB store_id 过滤作为兜底）。
+    """
     if not TOOLS:
         from . import tools  # noqa: F401  首次调用触发工具注册
     cls = TOOLS.get(tool_id)
     if cls is None:
         return err(NOT_FOUND, f"未知 tool {tool_id}")
+    blocked = cross_store_param(ctx.store_id, params)
+    if blocked:
+        return err(FORBIDDEN, f"参数 {blocked} 引用了其他门店数据，跨店读取被拒绝（隔离）")
     own = conn is None
     if own:
         conn = connect()
