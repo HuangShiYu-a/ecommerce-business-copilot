@@ -153,7 +153,7 @@ def test_catalog_all_tools():
     from copilot.tool import effective_catalog
     cat = effective_catalog()
     ids = {t["tool_id"] for t in cat}
-    assert ids == {"T-Q-03", "T-A-07", "T-R-01"}
+    assert ids == {"T-Q-03", "T-A-07", "T-R-01", "T-K-01"}
     tr = next(t for t in cat if t["tool_id"] == "T-R-01")
     assert tr["description"] and tr["input_schema"]["properties"]
 
@@ -162,6 +162,6 @@ def test_catalog_role_filter():
     from copilot.tool import effective_catalog
     cs = {t["tool_id"] for t in effective_catalog("customer_service")}
     ops = {t["tool_id"] for t in effective_catalog("operations")}
-    assert cs == {"T-Q-03"}                      # 客服只见库存查询
-    assert ops == {"T-Q-03", "T-A-07", "T-R-01"} # 运营见全部
-    assert "T-R-01" not in cs                    # 客服不应看见补货工具（Spec-1 §8.7）
+    assert cs == {"T-Q-03", "T-K-01"}                 # 客服：库存查询 + 知识检索
+    assert ops == {"T-Q-03", "T-A-07", "T-R-01", "T-K-01"}
+    assert "T-R-01" not in cs                         # 客服不应看见补货工具（Spec-1 §8.7）
