@@ -106,6 +106,16 @@ def cross_store_param(store_id: int, params: dict) -> str | None:
     return None
 
 
+def cross_store_info(store_id: int, params: dict) -> tuple[str, int] | None:
+    """跨店拦截信息：返回 (参数名, 引用店号)；无跨店 → None。供 FORBIDDEN 引导用。"""
+    for k, v in params.items():
+        if isinstance(v, str):
+            owned = reference_store(v)
+            if owned is not None and owned != store_id:
+                return k, owned
+    return None
+
+
 def run_tool(tool_id: str, ctx: UserContext, conn=None, **params) -> ToolResult:
     """按 tool_id 调用；未传入 conn 则自建并关闭；异常兜底为 DEPENDENCY_ERROR。
 
@@ -116,9 +126,12 @@ def run_tool(tool_id: str, ctx: UserContext, conn=None, **params) -> ToolResult:
     cls = TOOLS.get(tool_id)
     if cls is None:
         return err(NOT_FOUND, f"未知 tool {tool_id}")
-    blocked = cross_store_param(ctx.store_id, params)
+    blocked = cross_store_info(ctx.store_id, params)
     if blocked:
-        return err(FORBIDDEN, f"参数 {blocked} 引用了其他门店数据，跨店读取被拒绝（隔离）")
+        param, owned = blocked
+        return err(FORBIDDEN,
+                   f"参数 {param} 引用了门店{owned}的数据（当前上下文门店{ctx.store_id}），"
+                   f"跨店读取被拒绝（隔离）。如需查询请切换到门店{owned}。")
     own = conn is None
     if own:
         conn = connect()

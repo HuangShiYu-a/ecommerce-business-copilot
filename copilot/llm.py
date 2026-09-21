@@ -43,3 +43,20 @@ def get_llm(temperature: float = 0.0) -> ChatOpenAI:
         timeout=60,
         max_retries=2,
     )
+
+
+def draft(blocks: list[tuple[str, str]], fallback_text: str) -> str:
+    """统一回复草稿出口：live → LLM 生成（异常降级 fallback）；dryrun → 直接 fallback。
+
+    blocks：[(role, content)]（system/user 交替，经 context.assemble 组装）。
+    fallback_text：确定性模板文本（dryrun / LLM 失败共用）。
+    仅生成「自然语言文本」，绝不参与结构化 result 或业务结论（R4）。
+    """
+    if mode() != "live":
+        return fallback_text
+    try:
+        resp = get_llm().invoke(blocks)
+        text = str(resp.content or "").strip()
+        return text if text else fallback_text
+    except Exception:
+        return fallback_text

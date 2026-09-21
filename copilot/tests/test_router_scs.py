@@ -152,3 +152,5 @@ def test_direct_cross_store_forbidden():
     resp = out["response"]
     assert resp["status"] == "error"
     assert resp["result"].get("error_code") == "FORBIDDEN"
+    # F4：话术说明所属店 + 切换引导
+    assert "门店2" in resp["message"] and "切换" in resp["message"]

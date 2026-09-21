@@ -21,6 +21,8 @@ from langgraph.graph import END, START, StateGraph
 from .. import llm
 from ..context import ops_ctx
 from ..tool import run_tool
+from .context import ContextInput, assemble
+from .persona import capability_intro
 from .registry import resolve
 from .router import extract_entities, route_rules
 from .state import COMPLETED, RUNNING, TERMINATED, WAITING_USER_INPUT
@@ -128,6 +130,9 @@ def router(state: AgentRuntimeState) -> dict:
         prior = task.get("intent") if task else None
         if prior and prior != "out_of_scope":
             result.intent = prior
+            # F4.0：意图沿用时并入上一任务已解析槽位（续问带 SKU/订单号），
+            # 但仅限「确实沿用意图」的情形——无关新话题（无实体）不会进入本分支
+            result.entities = {**task.get("slots", {}), **result.entities}
     exec_ = _emit(state.get("execution", {}), "intent_detected", "router",
                   payload={"intent": result.intent, "entities": result.entities})
     exec_["phase"] = "new"
@@ -140,6 +145,33 @@ WORKFLOW_ROLES = {"OP-05": ("operations",), "OP-04": ("operations",), "OP-07": (
                   "OP-08": ("operations",), "OP-03": ("operations",),
                   "CS-06": ("customer_service", "operations"),
                   "CS-08": ("customer_service",)}
+
+
+def _clarify_ambiguous(routing: dict, role: str, message: str, store_id: int = 1) -> str:
+    """F5：意图模糊时的澄清引导（选项确定性；live 由 LLM 用专用澄清提示润色措辞）。"""
+    entities = routing.get("entities", {})
+    sku = entities.get("sku_code")
+    order = entities.get("order_no")
+    if sku:
+        fallback = (f"关于 {sku}，你想看哪一项？"
+                    "库存 / 缺货风险 / 补货建议 / 商品健康度 / 销售异常 / 慢销。")
+    elif order:
+        fallback = f"关于 {order}，你想看哪一项？订单详情 / 物流状态 / 退货资格。"
+    else:
+        fallback = (f"你的问题有些模糊。我可以帮你：{capability_intro(role)}"
+                    "请告诉我你想了解的具体内容。")
+    # live：专用澄清提示（非 persona——澄清是提问不是执行，避免被当成查数据）
+    if llm.mode() != "live":
+        return fallback
+    try:
+        sys = ("你是客服/运营 Copilot 的意图澄清助手。用户意图不明确，你需要向他确认"
+               "具体想看哪个维度的信息，然后请他选择。只提问、列选项，不要执行任何查询、"
+               "不要编造数据、不要假装已经查到了结果。用中文，简洁，给出 2~6 个选项。")
+        resp = llm.get_llm().invoke([("system", sys), ("user", message)])
+        text = str(resp.content or "").strip()
+        return text if text else fallback
+    except Exception:
+        return fallback
 
 
 def guardrails(state: AgentRuntimeState) -> dict:
@@ -155,37 +187,60 @@ def guardrails(state: AgentRuntimeState) -> dict:
     # 实体键归一化：LLM 键名 → 工具 Schema 规范键（Spec-1 §10.3）
     from .router import normalize_entities
     routing["entities"] = normalize_entities(routing.get("entities", {}))
+    # F5：意图模糊（LLM 低置信）→ 澄清引导，不硬猜执行（Spec-1 §9.1 歧义处理）
+    if routing.get("low_confidence") and intent != "out_of_scope":
+        store_id = state.get("session", {}).get("store_id", 1)
+        msg = _clarify_ambiguous(routing, role, state.get("message", ""), store_id)
+        task = _new_task(routing)
+        task["status"] = WAITING_USER_INPUT
+        task["pending_type"] = "clarify_intent"
+        task["current_step"] = "clarify_intent"
+        exec_ = _emit(state.get("execution", {}), "human_requested", "clarify_intent",
+                      payload={"intent": intent, "entities": routing.get("entities", {})})
+        return {"task": task, "routing": routing, "execution": exec_, "response": {
+            "message": msg, "status": WAITING_USER_INPUT, "needs_user_input": True}}
     # 权限检查（Spec-1 §4.2 / §10.3）：direct 工具或 workflow 的允许角色
     denied = False
+    required = None
     if path.kind == "direct" and path.target:
         from ..tool import TOOLS
         if not TOOLS:
             from .. import tools  # noqa: F401
         cls = TOOLS.get(path.target)
         denied = bool(cls and not cls.allows(role))
+        required = cls.allowed_roles if cls else None
     elif path.kind == "workflow" and path.target:
         roles = WORKFLOW_ROLES.get(path.target)
         denied = bool(roles and role not in roles)
+        required = roles
     if denied:
+        need = "/".join(required) if required else "相应"
         exec_ = _emit(state.get("execution", {}), "step_failed", "guardrails",
                       status="forbidden", payload={"intent": intent, "role": role})
         exec_["denied"] = True
         return {"routing": routing, "execution": exec_, "response": {
-            "message": f"无权执行该操作（{role} 角色权限不足）。",
+            "message": f"无权执行该操作（当前角色 {role} 权限不足；该功能需要 {need} 角色）。",
             "status": "forbidden", "needs_user_input": False}}
     return {"routing": routing}
 
 
 def resolver(state: AgentRuntimeState) -> dict:
-    """引用解析 + 最小澄清：missing_slots 先从任务状态（L2）解析，才问用户。"""
+    """引用解析 + 最小澄清：missing_slots 先从任务状态（L2）解析，才问用户。
+
+    F4.0：只从 task.slots 补全「当前缺失的槽位」（续问场景，如「未来 7 天呢」沿
+    用 sku_code），不再整包合并旧 slots —— 否则上一轮实体（SKU/订单号）会泄漏进
+    无关新话题（如「今天天气怎么样」被误判成 SKU 查询）。
+    """
     routing = dict(state.get("routing", {}))
     task = state.get("task")
     slots = dict(task.get("slots", {})) if task else {}
     missing = list(routing.get("missing_slots", []))
+    resolved = {}
     for m in list(missing):
         if m in slots:
+            resolved[m] = slots[m]
             missing.remove(m)
-    routing["entities"] = {**slots, **routing.get("entities", {})}
+    routing["entities"] = {**routing.get("entities", {}), **resolved}
     routing["missing_slots"] = missing
     return {"routing": routing, "__next": "clarify" if missing else "dispatcher"}
 
@@ -197,12 +252,19 @@ def clarify(state: AgentRuntimeState) -> dict:
     task["pending_type"] = "slot_fill"
     task["missing_slots"] = list(routing.get("missing_slots", []))   # 必须带入，供补槽
     field = task["missing_slots"][0] if task["missing_slots"] else ""
-    label = {"order_no": "订单号", "sku_code": "SKU 编码"}.get(field, field)
+    # F3：per-field 示例（订单号示例不再混入 SKU）；慢销提示 SKU 或类目
+    examples = {
+        "order_no": "订单号，如 ORD_01_000437",
+        "sku_code": "SKU 编码，如 SKU_01_STOCKOUT_01",
+    }
+    hint = examples.get(field, field)
+    if field == "sku_code" and routing.get("intent") == "slow_moving":
+        hint = "SKU 编码（如 SKU_01_STOCKOUT_01）或类目（如 美妆）"
     exec_ = _emit(state.get("execution", {}), "human_requested", "clarify",
                   payload={"missing_slots": task["missing_slots"]})
     return {
         "task": task, "execution": exec_,
-        "response": {"message": f"请提供{label}（形如 SKU_01_STOCKOUT_01 / ORD_01_000437）。",
+        "response": {"message": f"请提供{hint}。",
                      "status": WAITING_USER_INPUT, "needs_user_input": True},
     }
 
@@ -258,6 +320,64 @@ def workflow_node(state: AgentRuntimeState) -> dict:
     return {"execution": exec_}
 
 
+# ---- F1 分层兜底（out_of_scope → 能力咨询 / 知识检索 / 选项引导 / 自然拒绝）----
+
+_CAPABILITY_KEYWORDS = ("你是谁", "你能做什么", "能做什么", "能帮我做什么", "会什么",
+                        "介绍", "帮忙看看你", "你的功能", "能干嘛")
+
+
+def _chat_fallback(state: AgentRuntimeState, routing: dict, session: dict) -> tuple[str, str]:
+    """out_of_scope 分层兜底：返回 (message, status)。
+
+    Tier ① 能力咨询 → persona 能力清单（live 由 LLM 润色）
+    Tier ② 知识型 → T-K-01 RAG 检索，命中则基于证据作答
+    Tier ③ 有 sku/order 实体 → 选项式引导（列该实体可查的能力）
+    Tier ④ 其余 → 自然拒绝 + 能力引导（保留「能力范围」措辞）
+    """
+    message = state.get("message", "")
+    entities = routing.get("entities", {})
+    role = session.get("role", "operations")
+    store_id = session.get("store_id", 1)
+    conv = list(state.get("conversation", []))[-6:]
+
+    def _blocks(rag=None, tool_result=None):
+        return assemble(ContextInput(
+            role=role, store_id=store_id, message=message, conversation=conv,
+            rag=rag, tool_result=tool_result))
+
+    # ① 能力咨询
+    if any(k in message for k in _CAPABILITY_KEYWORDS):
+        fallback = capability_intro(role)
+        return llm.draft(_blocks(), fallback), COMPLETED
+
+    # ② 有实体无意图 → 选项式引导（用户指向具体对象，先给该对象可查的能力）
+    entity = entities.get("sku_code") or entities.get("order_no")
+    if entity:
+        caps = ("库存/缺货风险/补货建议/商品健康度/销售异常/慢销" if entities.get("sku_code")
+                else "订单详情/物流/退货资格")
+        fallback = (f"关于 {entity}，我可以帮你查：{caps}。"
+                    "请告诉我你想看哪一项。")
+        return fallback, COMPLETED
+
+    # ③ 知识型兜底（RAG）：T-K-01 检索，命中则基于证据作答
+    try:
+        from ..context import ops_ctx
+        res = run_tool("T-K-01", ops_ctx(store_id), query=message)
+        results = (res.data or {}).get("results", []) if res.ok else []
+        if results:
+            rag = [f"{r.get('title')}（{r.get('section','')}）：{r.get('content','')}" for r in results[:2]]
+            fallback = "检索到相关业务知识：\n" + "\n".join(
+                f"· {r.get('title')}（{r.get('section','')}）" for r in results[:3])
+            return llm.draft(_blocks(rag=rag), fallback), COMPLETED
+    except Exception:
+        pass
+
+    # ④ 自然拒绝 + 能力引导
+    intro = capability_intro(role)
+    fallback = f"这超出了我的能力范围。{intro}"
+    return llm.draft(_blocks(), fallback), TERMINATED
+
+
 def finalize(state: AgentRuntimeState) -> dict:
     if state.get("response"):  # guardrails 权限拒绝已设响应 → 直接收尾
         task = dict(state.get("task", {})) or _new_task(state.get("routing", {}))
@@ -280,7 +400,7 @@ def finalize(state: AgentRuntimeState) -> dict:
 
     if kind == "direct":
         result = execution.get("tool_result", {})
-        message = _draft_direct(routing.get("intent"), result)
+        message = _draft_direct(state, routing.get("intent"), result)
         status = COMPLETED if "error_code" not in result else "error"
     elif kind == "workflow":
         wr = execution.get("workflow_result", {})
@@ -291,14 +411,13 @@ def finalize(state: AgentRuntimeState) -> dict:
             exec_ = _emit(state["execution"], "human_requested", "confirm",
                           payload={"route_status": wr.get("route_status")})
             return {"task": task, "execution": exec_, "response": {
-                "message": _draft_workflow(wr) + "\n\n是否确认执行？",
+                "message": _draft_workflow(state, wr) + "\n\n是否确认执行？",
                 "status": WAITING_USER_INPUT, "needs_user_input": True,
                 "approval_required": True, "result": wr.get("formal_result", {})}}
-        message = _draft_workflow(wr)
+        message = _draft_workflow(state, wr)
         status = COMPLETED if wr.get("status") == "completed" else TERMINATED
-    else:  # out_of_scope
-        message = "该问题不在我的能力范围（可咨询库存/补货/缺货/订单/物流/退货等）。"
-        status = TERMINATED
+    else:  # out_of_scope → F1 分层兜底
+        message, status = _chat_fallback(state, routing, state.get("session", {}))
 
     task["current_step"] = "finalize"
     task["status"] = status if status in (COMPLETED, TERMINATED) else task.get("status", RUNNING)
@@ -309,7 +428,31 @@ def finalize(state: AgentRuntimeState) -> dict:
     }}
 
 
-def _draft_direct(intent: str, result: dict) -> str:
+def _draft_context(state: AgentRuntimeState, tool_result: dict | None = None) -> list[tuple[str, str]]:
+    """组装 LLM 解释上下文（F2）：persona + 历史 + 工具结果 + 当前消息。"""
+    session = state.get("session", {})
+    conv = list(state.get("conversation", []))[-6:]
+    return assemble(ContextInput(
+        role=session.get("role", "operations"), store_id=session.get("store_id", 1),
+        message=state.get("message", ""), conversation=conv, tool_result=tool_result))
+
+
+def _draft_direct(state: AgentRuntimeState, intent: str, result: dict) -> str:
+    fallback = _draft_direct_tpl(intent, result)
+    if "error_code" in result or intent == "knowledge_query" or llm.mode() != "live":
+        return fallback   # 错误/检索列表/离线 → 保持确定性模板（引用事实）
+    return llm.draft(_draft_context(state, tool_result=result), fallback)
+
+
+def _draft_workflow(state: AgentRuntimeState, wr: dict) -> str:
+    fallback = _draft_workflow_tpl(wr)
+    if (wr.get("status") != "completed" or wr.get("route_status") in ("FORBIDDEN", "UNDETERMINED")
+            or llm.mode() != "live"):
+        return fallback   # 失败/隔离/未决/离线 → 模板（明确语义，LLM 不润色）
+    return llm.draft(_draft_context(state, tool_result=wr.get("formal_result", {})), fallback)
+
+
+def _draft_direct_tpl(intent: str, result: dict) -> str:
     if "error_code" in result:
         return f"查询失败：{result.get('error_detail', result.get('error_code'))}。"
     if intent == "inventory_query":
@@ -324,7 +467,7 @@ def _draft_direct(intent: str, result: dict) -> str:
     return f"查询结果：{result}"
 
 
-def _draft_workflow(wr: dict) -> str:
+def _draft_workflow_tpl(wr: dict) -> str:
     route = wr.get("route_status")
     fr = wr.get("formal_result", {})
     if route == "HAS_RECO":
@@ -338,7 +481,8 @@ def _draft_workflow(wr: dict) -> str:
     if route == "UNDETERMINED":
         return f"暂无法判定：{fr.get('error_detail')}。"
     if route == "FORBIDDEN":
-        return f"无权访问：{fr.get('error_detail', '跨店数据被隔离')}。"
+        detail = fr.get("error_detail", "跨店数据被隔离")
+        return f"无权访问：{detail}" if detail.endswith("。") else f"无权访问：{detail}。"
     if route in ("eligible", "ineligible", "undetermined"):
         reason = fr.get("reason_code", route)
         return (f"退货资格判定：{route}（{reason}）。{fr.get('explanation', '')}"

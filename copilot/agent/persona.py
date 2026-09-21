@@ -33,3 +33,31 @@ ROLE_PROMPTS: dict[str, str] = {
 def get_persona(role: str) -> str:
     """按角色取 persona；未知角色回退运营（防 LLM 文本注入角色）。"""
     return ROLE_PROMPTS.get(role, ROLE_PROMPTS["operations"])
+
+
+# 能力清单（F1 能力咨询/引导用）：per-role 能力 + 示例问题
+CAPABILITIES: dict[str, list[tuple[str, str]]] = {
+    "operations": [
+        ("库存查询", "SKU_01_STOCKOUT_01 库存多少"),
+        ("缺货风险", "SKU_01_STOCKOUT_01 缺货风险怎么样"),
+        ("补货建议", "SKU_01_NORMAL_01 需要补货吗"),
+        ("销售异常", "SKU_01_ANOMALY_DROP_01 销售有没有异常"),
+        ("慢销识别", "SKU_01_SLOW_01 是不是慢销"),
+        ("商品健康度", "SKU_01_PRICE_DROP_01 健康度怎么样"),
+        ("业务知识问答", "运营政策是什么"),
+    ],
+    "customer_service": [
+        ("订单查询", "ORD_01_000002 订单详情"),
+        ("物流查询", "ORD_01_000002 物流到哪了"),
+        ("退货资格判定", "ORD_01_000438 可以退货吗"),
+        ("售后政策问答", "退货政策是什么"),
+    ],
+}
+
+
+def capability_intro(role: str) -> str:
+    """能力介绍话术（dryrun 确定性；live 由 LLM 润色）。"""
+    items = CAPABILITIES.get(role, CAPABILITIES["operations"])
+    lines = "\n".join(f"· {label}：例如「{example}」" for label, example in items)
+    return (f"我是电商{'运营' if role == 'operations' else '客服'} Copilot，可以帮你：\n{lines}\n"
+            "直接告诉我你的问题（带上 SKU 编码或订单号效果更好）。")
