@@ -25,7 +25,7 @@ from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.graph import END, START, StateGraph, add_messages
 
 from .. import llm
-from ..context import session_ctx
+from ..context import mode_to_role, session_ctx
 from .persona import get_persona
 from .toolkit import build_toolkit, catalog_names
 
@@ -162,7 +162,7 @@ def _persist_session(session: dict, thread_id: str, status: str, message: str,
         from ..runtime.store import create_session, write_run_log
         sid = session.get("session_id", "")
         uid = int(session.get("user_id") or 1)
-        role = session.get("workspace_mode") or "operations"
+        role = mode_to_role(session.get("workspace_mode"))   # run_log 用小写（审查发现 4）
         store = int(session.get("store_id") or 1)
         create_session(sid, thread_id, uid, role, store, title=message[:20] or None)
         write_run_log(

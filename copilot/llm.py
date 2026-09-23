@@ -48,6 +48,9 @@ def get_llm(temperature: float = 0.0) -> ChatOpenAI:
 def draft(blocks: list[tuple[str, str]], fallback_text: str) -> str:
     """统一回复草稿出口：live → LLM 生成（异常降级 fallback）；dryrun → 直接 fallback。
 
+    DEPRECATED（审查发现 5）：仅 legacy orchestrator（F2 解释）使用；
+    ReAct 在 react.py 内直接 get_llm().invoke 生成最终回答。
+
     blocks：[(role, content)]（system/user 交替，经 context.assemble 组装）。
     fallback_text：确定性模板文本（dryrun / LLM 失败共用）。
     仅生成「自然语言文本」，绝不参与结构化 result 或业务结论（R4）。

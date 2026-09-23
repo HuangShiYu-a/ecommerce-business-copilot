@@ -100,8 +100,7 @@ class Workbench:
         self._confirm_row.set_visibility(False)
         self._chat_area.clear()
         if self.runtime is not None:
-            from copilot.agent.graph_factory import ReactGraphFactory
-            if isinstance(self.runtime, ReactGraphFactory):
+            if not api.is_legacy():
                 # ReAct：读该会话实际模式（runtime.session.role 即 workspace_mode）
                 for s in api.list_sessions(USER_ID):
                     if s["session_id"] == session_id:

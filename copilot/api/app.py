@@ -71,8 +71,9 @@ def agent(req: AgentRequest) -> AgentResponse:
     session = {"session_id": req.session_id, "user_id": req.user_id,
                "workspace_mode": req.workspace_mode, "store_id": req.store_id}
     if LEGACY:
+        from ..context import mode_to_role
         sess = dict(session)
-        sess["role"] = req.workspace_mode if req.workspace_mode != "UNSET" else "operations"
+        sess["role"] = mode_to_role(req.workspace_mode)
         result = run_agent(RUNTIME, req.session_id, sess, req.message)
     else:
         graph = RUNTIME.get(req.workspace_mode)

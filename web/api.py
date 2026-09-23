@@ -66,8 +66,9 @@ def send(runtime, thread_id: str, session: dict, message: str,
     """发送一轮。runtime 为 ReactGraphFactory（默认）或 legacy graph（AGENT_BACKEND=legacy）。"""
     try:
         if is_legacy():
+            from copilot.context import mode_to_role
             sess = dict(session)
-            sess["role"] = session.get("workspace_mode") or session.get("role") or "operations"
+            sess["role"] = mode_to_role(session.get("workspace_mode") or session.get("role"))
             out = run_agent(runtime, thread_id, sess, message)
         else:
             graph = runtime.get(session.get("workspace_mode") or "UNSET")

@@ -28,3 +28,12 @@ def session_ctx(session: dict) -> UserContext:
         role=session.get("workspace_mode") or session.get("role") or "operations",
         store_id=int(session.get("store_id") or 1),
     )
+
+
+def mode_to_role(mode: str | None) -> str:
+    """Workspace Mode（大写）→ 小写角色（customer_service/operations）；UNSET/未知回退 operations。
+
+    消除大写 workspace_mode 与工具 allowed_roles（小写）的大小写冲突（审查发现 1）。
+    """
+    m = (mode or "").lower()
+    return m if m in ("customer_service", "operations") else "operations"

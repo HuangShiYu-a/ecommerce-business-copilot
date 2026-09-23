@@ -165,6 +165,9 @@ def run_tool(tool_id: str, ctx: UserContext, conn=None, **params) -> ToolResult:
 def effective_catalog(role: str | None = None) -> list[dict]:
     """Effective Tool Catalog（Spec-1 §8.7）：按角色过滤后的工具元数据。
 
+    DEPRECATED（审查发现 5）：ReAct 新架构用 toolkit._catalog_classes / build_toolkit；
+    legacy 运行时不用本函数（走 registry）。仅测试引用，保留供参考。
+
     LLM 只见权限内工具，靠过滤而非靠模型自觉不调用。
     """
     if not TOOLS:

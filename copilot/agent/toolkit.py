@@ -259,7 +259,9 @@ def make_op05_workflow_tool(ctx_provider: Callable[[], UserContext]) -> Structur
             })
             if not (decision and decision.get("decision") == "approved"):
                 return {**data, "status": "cancelled"}
-            return {**data, "status": "confirmed"}   # V1 仅记录确认事件（不写业务表）
+            # 确认事件记录：随本轮 run_log（status=completed）+ 会话 ToolMessage 持久化；
+            # V1 无采购单写工具，不写业务表（审查发现 3 明确：确认本身不单独落 audit）。
+            return {**data, "status": "confirmed"}
         finally:
             conn.close()
 

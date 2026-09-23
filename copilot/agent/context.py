@@ -1,5 +1,8 @@
 """Context Manager（Spec-1 §11）：上下文按规则组装。
 
+DEPRECATED（审查发现 5）：ReAct 新架构在 react.py 内自建 system prompt
+（_system_prompt + _memory_block），本模块的 assemble 仅 legacy orchestrator 使用。
+
 组装顺序（§11.1）：System → 身份/权限 → 任务状态(JSON) → 会话历史(最近 N 轮)
 → 长期记忆 → RAG → 工具结果 → 当前消息。
 五大原则（§11.2）：按需注入 / V1 截断不摘要 / 结构化优先 / 分块有边界 / Token 预算。

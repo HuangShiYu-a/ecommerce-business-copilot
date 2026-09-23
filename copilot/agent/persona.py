@@ -56,7 +56,10 @@ CAPABILITIES: dict[str, list[tuple[str, str]]] = {
 
 
 def capability_intro(role: str) -> str:
-    """能力介绍话术（dryrun 确定性；live 由 LLM 润色）。"""
+    """能力介绍话术（dryrun 确定性；live 由 LLM 润色）。
+
+    DEPRECATED（审查发现 5）：仅 legacy orchestrator（F1 兜底）使用；ReAct 不调用。
+    """
     items = CAPABILITIES.get(role, CAPABILITIES["operations"])
     lines = "\n".join(f"· {label}：例如「{example}」" for label, example in items)
     return (f"我是电商{'运营' if role == 'operations' else '客服'} Copilot，可以帮你：\n{lines}\n"

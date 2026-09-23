@@ -1,5 +1,9 @@
 """Workflow 执行器（Spec-1 §3.5 契约）：Runtime → Workflow 的边界。
 
+DEPRECATED：本模块的 OP-05/CS-08 流程逻辑已被 toolkit.py 的 workflow 工具
+（make_op05_workflow_tool / make_cs08_workflow_tool）取代；仅 AGENT_BACKEND=legacy
+回退的 legacy orchestrator 使用。改动请优先作用于 toolkit 版，避免两处漂移。
+
 Runtime 不把完整 AgentRuntimeState 传给 workflow，只传最小输入（WorkflowInput），
 回收结构化结果（WorkflowResult）。Workflow 内部语义（计算/映射）不暴露给 Runtime。
 """
