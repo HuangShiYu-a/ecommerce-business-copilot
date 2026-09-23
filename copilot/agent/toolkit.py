@@ -17,6 +17,7 @@ from __future__ import annotations
 from collections.abc import Callable
 
 from langchain_core.tools import StructuredTool
+from pydantic import BaseModel, Field
 
 from ..context import UserContext
 from ..db import connect
@@ -131,10 +132,40 @@ def catalog_names(mode: str) -> list[str]:
     return [c.name for c in _catalog_classes(mode)]
 
 
-def build_toolkit(mode: str, ctx_provider: Callable[[], UserContext]) -> list[StructuredTool]:
-    """返回该模式下的 LangChain 工具列表。
+# ---- W2.9：request_capability meta-tool（恒在，所有模式可见）----
 
-    Phase 1 仅含 10 直连工具；workflow 工具（OP-05/CS-08）与 request_capability meta-tool
-    分别在 Phase 2/3 加入。
+def make_request_capability_tool() -> StructuredTool:
+    """能力协商 meta-tool（D10=a+）。
+
+    类比 Unix sudo：不调业务数据、不改业务状态，仅发起"切换到更高能力域"的请求；
+    真正的 Workspace Mode 变更必须用户确认（react.py 捕获该调用 → capability_pending）。
     """
-    return [make_langchain_tool(c, ctx_provider) for c in _catalog_classes(mode)]
+    def _request(domain: str) -> dict:
+        return {
+            "capability_requested": domain,
+            "status": "pending",
+            "note": "已请求切换到该能力域，等待用户确认。",
+        }
+
+    return StructuredTool.from_function(
+        func=_request,
+        name="request_capability",
+        description=(
+            "请求切换到更高的能力域（customer_service / operations）。"
+            "用于：当前任务需要当前 Workspace Mode 目录之外的专属工具时（如 UNSET 下需要"
+            "缺货风险/退货建单等）。仅发起请求，切换需用户确认，本工具不执行任何业务查询。"),
+        args_schema=RequestCapabilityInput,
+    )
+
+
+def build_toolkit(mode: str, ctx_provider: Callable[[], UserContext]) -> list[StructuredTool]:
+    """返回该模式下的 LangChain 工具列表（直连 + 恒在 request_capability meta-tool）。
+
+    Phase 1 仅含 10 直连工具；workflow 工具（OP-05/CS-08）在 Phase 3 加入。
+    """
+    return ([make_langchain_tool(c, ctx_provider) for c in _catalog_classes(mode)]
+            + [make_request_capability_tool()])
+
+
+class RequestCapabilityInput(BaseModel):
+    domain: str = Field(description="请求切换到的能力域：customer_service / operations")
