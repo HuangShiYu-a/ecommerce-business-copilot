@@ -25,6 +25,8 @@ _ROUTER_TOOL = {
                                   "description": "该意图必需但消息中缺失的槽位"},
                 "low_confidence": {"type": "boolean",
                                    "description": "意图判断是否低置信（歧义时 true）"},
+                "role": {"type": "string", "enum": ["customer_service", "operations"],
+                         "description": "该请求所属的角色场景：退货/物流/订单查询→customer_service；库存/补货/缺货/销售/健康度→operations"},
             },
             "required": ["intent", "entities", "missing_slots"],
         },
@@ -42,7 +44,9 @@ def llm_route(message: str, conversation: list[dict] | None = None) -> RouterRes
         ("system", "你是意图解析器。从固定枚举中选最匹配的意图，抽取实体槽位。"
                    "entities 字段用英文键（sku_code/order_no/horizon_days/lead_time_days），值用消息原文。"
                    "若用户消息是承接上一轮任务的续问（如「未来 7 天呢」「采购周期 3 天呢」），"
-                   "结合上下文选与上轮一致的意图。"),
+                   "结合上下文选与上轮一致的意图。"
+                   "role 字段顺带判定请求所属角色场景：退货/物流/订单查询类→customer_service；"
+                   "库存/补货/缺货/销售/健康度类→operations。"),
     ]
     if conversation:
         for turn in conversation[-6:]:

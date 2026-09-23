@@ -110,6 +110,17 @@ def _is_continue(message: str) -> bool:
     return any(w in message for w in ("继续", "重新", "再试", "接着"))
 
 
+def _resolve_default_store(entities: dict) -> int | None:
+    """从实体前缀解析默认门店（ORD_x_/SKU_x_ → 店号）；无前缀 → None。"""
+    from ..tool import reference_store
+    for v in entities.values():
+        if isinstance(v, str):
+            s = reference_store(v)
+            if s is not None:
+                return s
+    return None
+
+
 def router(state: AgentRuntimeState) -> dict:
     message = state.get("message", "")
     if llm.mode() == "live":
@@ -137,7 +148,19 @@ def router(state: AgentRuntimeState) -> dict:
                   payload={"intent": result.intent, "entities": result.entities})
     exec_["phase"] = "new"
     exec_["pending"] = False
-    return {"routing": result.model_dump(), "execution": exec_}
+
+    # 方向 A：首次对话自动判定角色/门店并锁定（前端零预选）
+    session = dict(state.get("session", {}))
+    determined = False
+    if not session.get("role"):
+        session["role"] = result.role or "operations"
+        determined = True
+    if not session.get("store_id"):
+        dstore = _resolve_default_store(result.entities)
+        session["store_id"] = dstore if dstore is not None else 1   # 无门店引用 → 默认店 1
+    if determined:
+        exec_["role_just_determined"] = True   # 触发首次角色说明（finalize 消费，仅本轮）
+    return {"routing": result.model_dump(), "execution": exec_, "session": session}
 
 
 # workflow → 允许角色（阶段 4 随各 workflow 扩展；Spec-1 §4.2）
@@ -378,6 +401,22 @@ def _chat_fallback(state: AgentRuntimeState, routing: dict, session: dict) -> tu
     return llm.draft(_blocks(), fallback), TERMINATED
 
 
+def _role_label(role: str) -> str:
+    return {"operations": "运营", "customer_service": "客服"}.get(role, role)
+
+
+def _role_announcement(role: str, intent: str) -> str:
+    """方向 A：首次角色说明（仅判定当轮附加一次）。"""
+    intent_zh = {"stockout_risk": "缺货风险", "restock_recommendation": "补货建议",
+                 "inventory_query": "库存查询", "sales_anomaly": "销售异常",
+                 "slow_moving": "慢销识别", "product_health": "商品健康度",
+                 "return_eligibility": "退货资格", "shipping_status": "物流查询",
+                 "order_query": "订单查询", "fulfillment_delay": "物流异常",
+                 "knowledge_query": "知识问答"}.get(intent, "业务")
+    return (f"自动检测到你提问了「{intent_zh}」相关问题，已为你判定为{_role_label(role)}人员，"
+            f"主要提供{_role_label(role)}场景的查询与决策辅助。如需切换角色，请重开窗口或手动切换。\n\n")
+
+
 def finalize(state: AgentRuntimeState) -> dict:
     if state.get("response"):  # guardrails 权限拒绝已设响应 → 直接收尾
         task = dict(state.get("task", {})) or _new_task(state.get("routing", {}))
@@ -558,7 +597,7 @@ def run_agent(graph, thread_id: str, session: dict, message: str) -> dict:
         "response": {},   # 覆盖上轮持久化的 response（guardrails 条件边依赖）
     }
     config = {"configurable": {"thread_id": thread_id}}
-    # 续轮：读取已持久化的 task/conversation，不覆盖
+    # 续轮：读取已持久化的 task/conversation/session（不覆盖）
     try:
         persisted = graph.get_state(config).values
     except Exception:
@@ -567,16 +606,32 @@ def run_agent(graph, thread_id: str, session: dict, message: str) -> dict:
         input_state["task"] = persisted["task"]
     if persisted.get("conversation"):
         input_state["conversation"] = persisted["conversation"]
+    if persisted.get("session"):
+        # 方向 A：已判定角色/门店的会话，用持久化值（前端零预选/未回传时沿用）
+        saved = dict(persisted["session"])
+        if not session.get("role") and saved.get("role"):
+            session = {**session, "role": saved["role"], "store_id": saved.get("store_id")}
+    input_state["session"] = session
 
     out = graph.invoke(input_state, config)
     resp = out.get("response", {"message": "", "status": "error"})
-    _persist(out, session, thread_id, message)
+    # 方向 A：判定后的 session（role/store 可能被 router 首次对话更新）
+    resolved_session = out.get("session") or session
+    _persist(out, resolved_session, thread_id, message)
     # 追加会话历史（user + assistant）
     conv = list(out.get("conversation", []))
     conv += [{"role": "user", "content": message}]
     if resp.get("message"):
         conv += [{"role": "assistant", "content": resp["message"]}]
-    graph.update_state(config, {"conversation": conv})
+    graph.update_state(config, {"conversation": conv, "session": resolved_session})
+    # 方向 A：首次判定角色 → 附加一次角色说明（统一在出口注入，覆盖所有 finalize 分支）
+    if out.get("execution", {}).get("role_just_determined"):
+        announce = _role_announcement(resolved_session.get("role", "operations"),
+                                      out.get("routing", {}).get("intent", ""))
+        if resp.get("message"):
+            resp["message"] = announce + resp["message"]
+    resp["role"] = resolved_session.get("role")          # 供前端回显判定后的角色
+    resp["store_id"] = resolved_session.get("store_id")  # 供前端回显判定后的门店
     return {"response": resp, "state": out}
 
 

@@ -446,13 +446,14 @@ scenarios:
 - scenario_id: SC-ISO-001
   workflow: ISO
   nature: data
-  description: STORE_01 上下文读 STORE_02 订单 → 期望 FORBIDDEN / 空隔离
+  description: STORE_01 上下文读 STORE_02 订单 → 读取放开，标注来源店（写操作仍限店）
   store_id: STORE_01
   sku_ids: []
   order_no: ORD_02_002489
   input_scope: {}
   trigger_type: CROSS_STORE
-  expected_route: FORBIDDEN
+  expected_route: NORMAL
   expected_reason: null
-  expected_formal_result: {}
-  remarks: ''
+  expected_formal_result:
+    source_store: 2
+  remarks: 方向 A：跨店读取放开，结果标注 source_store=2

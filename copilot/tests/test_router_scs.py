@@ -116,11 +116,13 @@ def test_cs06_all_data_sc_route():
             assert s["expected_reason"] in wr.get("formal_result", {}).get("error_detail", ""), s
 
 
-def test_iso_cross_store_forbidden():
-    """SC-ISO-001：STORE_01 上下文读 STORE_02 订单 → FORBIDDEN（B5 跨店隔离）。"""
+def test_iso_cross_store_read_allowed():
+    """SC-ISO-001：STORE_01 上下文读 STORE_02 订单 → 读取放开 + source_store 标注（方向 A）。"""
     for s in [x for x in SCENARIOS["scenarios"] if x["scenario_id"] == "SC-ISO-001"]:
         wr = run_sc_route(s)
-        assert wr.get("route_status") == "FORBIDDEN", f"{s['scenario_id']}: {wr}"
+        assert wr.get("route_status") == s["expected_route"], f"{s['scenario_id']}: {wr}"
+        fr = wr.get("formal_result", {})
+        assert fr.get("source_store") == 2, f"{s['scenario_id']}: {fr}"
 
 
 def test_cs08_all_data_sc_route():
@@ -144,13 +146,12 @@ def test_shipping_status_direct_route():
     assert resp["result"].get("order_no") == "ORD_01_000002"
 
 
-def test_direct_cross_store_forbidden():
-    """直连工具（T-Q-05）跨店引用同样被 FORBIDDEN 拦截（B5 工具层统一守卫）。"""
+def test_direct_cross_store_read_allowed():
+    """直连工具（T-Q-05）跨店读取 → 放行 + source_store 标注（方向 A；写操作才 FORBIDDEN）。"""
     g = build_runtime_graph(InMemorySaver())
     sess = {"session_id": "sc", "user_id": 3, "role": "operations", "store_id": 1}
     out = run_agent(g, "sc_ship2", sess, "ORD_02_002489 物流到哪了")
     resp = out["response"]
-    assert resp["status"] == "error"
-    assert resp["result"].get("error_code") == "FORBIDDEN"
-    # F4：话术说明所属店 + 切换引导
-    assert "门店2" in resp["message"] and "切换" in resp["message"]
+    assert resp["status"] == "completed"
+    assert resp["result"].get("order_no") == "ORD_02_002489"
+    assert resp["result"].get("source_store") == 2

@@ -89,6 +89,22 @@ def normalize_entities(entities: dict) -> dict:
     return out
 
 
+# 意图 → 所属角色场景（方向 A：角色自动判定的规则兜底；LLM live 输出优先）
+_CS_INTENTS = {"return_eligibility", "shipping_status", "order_query", "fulfillment_delay",
+               "knowledge_query"}
+_OPS_INTENTS = {"stockout_risk", "restock_recommendation", "inventory_query",
+                "sales_anomaly", "slow_moving", "product_health"}
+
+
+def rule_role(intent: str) -> str | None:
+    """按意图判定角色场景；无法判定 → None。"""
+    if intent in _CS_INTENTS:
+        return "customer_service"
+    if intent in _OPS_INTENTS:
+        return "operations"
+    return None
+
+
 def route_rules(message: str) -> RouterResult:
     """dryrun 确定性路由：intent + entities + missing_slots。"""
     entities = extract_entities(message)
@@ -108,4 +124,5 @@ def route_rules(message: str) -> RouterResult:
         if "sku_code" not in entities:
             missing.append("sku_code")
 
-    return RouterResult(intent=intent, entities=entities, missing_slots=missing)
+    return RouterResult(intent=intent, entities=entities, missing_slots=missing,
+                        role=rule_role(intent))

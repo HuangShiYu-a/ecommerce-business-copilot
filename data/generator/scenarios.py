@@ -248,9 +248,11 @@ def generate_scenarios(cfg: GeneratorConfig, canonical_dir: Path, output_root: P
         sc("SC-OP08-004", "OP-08", "data", "STORE_01", "DROP_WITH_PRICE_EVIDENCE", "ANOMALY",
            sku_ids=["SKU_01_PRICE_DROP_01"], description="R_PRICE_DROP 降价证据"),
         # ---- ISO ----
-        sc("SC-ISO-001", "ISO", "data", "STORE_01", "CROSS_STORE", "FORBIDDEN",
+        sc("SC-ISO-001", "ISO", "data", "STORE_01", "CROSS_STORE", "NORMAL",
            order_no=store2_order["order_no"],
-           description="STORE_01 上下文读 STORE_02 订单 → 期望 FORBIDDEN / 空隔离"),
+           expected_formal_result={"source_store": 2},
+           description="STORE_01 上下文读 STORE_02 订单 → 读取放开，标注来源店（写操作仍限店）",
+           remarks="方向 A：跨店读取放开，结果标注 source_store=2"),
     ]
 
     if len(scenarios) != 33:

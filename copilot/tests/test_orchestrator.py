@@ -182,6 +182,44 @@ def test_clarify_ambiguous_dryrun():
     assert "模糊" in none_msg or "Copilot" in none_msg
 
 
+# ---- 方向 A：角色/门店自动判定 ----
+
+def test_role_determine_first_turn():
+    """A：零预选 session，首次对话按意图自动判定角色 + 首次说明（仅一次）。"""
+    from langgraph.checkpoint.memory import InMemorySaver
+    from copilot.agent.orchestrator import build_runtime_graph, run_agent
+    g = build_runtime_graph(InMemorySaver())
+    sess = {"session_id": "a1", "user_id": 3}   # 无 role/store
+    r1 = run_agent(g, "t_role", sess, "SKU_01_STOCKOUT_01 缺货风险怎么样")["response"]
+    assert r1["role"] == "operations" and r1["store_id"] == 1
+    assert "自动检测" in r1["message"] and "运营" in r1["message"]
+    r2 = run_agent(g, "t_role", sess, "SKU_01_NORMAL_01 库存多少")["response"]
+    assert "自动检测" not in r2["message"]   # 仅首次
+
+
+def test_role_determine_customer_service():
+    """A：退货意图 → 判定为客服。"""
+    from langgraph.checkpoint.memory import InMemorySaver
+    from copilot.agent.orchestrator import build_runtime_graph, run_agent
+    g = build_runtime_graph(InMemorySaver())
+    sess = {"session_id": "a2", "user_id": 3}
+    r = run_agent(g, "t_role_cs", sess, "ORD_01_000438 可以退货吗")["response"]
+    assert r["role"] == "customer_service"
+    assert "客服" in r["message"]
+
+
+def test_zero_preselect_knowledge_no_crash():
+    """A：零预选 session（无 role/store）走知识查询 → 默认店 1，不崩溃。"""
+    from langgraph.checkpoint.memory import InMemorySaver
+    from copilot.agent.orchestrator import build_runtime_graph, run_agent
+    g = build_runtime_graph(InMemorySaver())
+    sess = {"session_id": "a3", "user_id": 3}   # 无 role/store
+    r = run_agent(g, "t_kb", sess, "订单退货政策是什么")["response"]
+    assert r["role"] in ("customer_service", "operations")
+    assert r["store_id"] == 1                   # 默认店 1
+    assert r["status"] in ("completed", "waiting_user_input")
+
+
 def test_knowledge_query_via_orchestrator(runtime):
     """knowledge_query 意图经 orchestrator 执行 T-K-01（RAG 集成）。"""
     r = _turn(runtime, "t_kq", "查询一下运营政策")

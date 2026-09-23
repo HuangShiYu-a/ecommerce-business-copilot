@@ -4,7 +4,7 @@
     {
       "name": "copilot-web",
       "runtimeExecutable": "C:/Users/HSY20/.conda/envs/ecommerce-agent/python.exe",
-      "runtimeArgs": ["-m", "uvicorn", "copilot.api.app:app", "--host", "127.0.0.1", "--port", "8000"],
+      "runtimeArgs": ["-m", "web.main"],
       "port": 8000
     }
   ]

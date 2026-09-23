@@ -119,19 +119,37 @@ def cross_store_info(store_id: int, params: dict) -> tuple[str, int] | None:
 def run_tool(tool_id: str, ctx: UserContext, conn=None, **params) -> ToolResult:
     """按 tool_id 调用；未传入 conn 则自建并关闭；异常兜底为 DEPENDENCY_ERROR。
 
-    跨 store 引用在调度前拦截（B5：工具层隔离不变，DB store_id 过滤作为兜底）。
+    跨 store 引用（方向 A）：读工具（read_write=read）放开——按引用店替换 ctx 执行，
+    结果标注 source_store；写工具（read_write=write）仍 FORBIDDEN（跨店写越权）。
     """
     if not TOOLS:
         from . import tools  # noqa: F401  首次调用触发工具注册
     cls = TOOLS.get(tool_id)
     if cls is None:
         return err(NOT_FOUND, f"未知 tool {tool_id}")
-    blocked = cross_store_info(ctx.store_id, params)
-    if blocked:
-        param, owned = blocked
-        return err(FORBIDDEN,
-                   f"参数 {param} 引用了门店{owned}的数据（当前上下文门店{ctx.store_id}），"
-                   f"跨店读取被拒绝（隔离）。如需查询请切换到门店{owned}。")
+    owned = cross_store_info(ctx.store_id, params)
+    if owned:
+        param, target_store = owned
+        if cls.read_write == "write":
+            return err(FORBIDDEN,
+                       f"参数 {param} 引用了门店{target_store}的数据（当前上下文门店{ctx.store_id}），"
+                       f"跨店写操作被拒绝（写操作仅限当前会话门店）。")
+        # 读工具跨店放开：用目标店重建 ctx 执行（SQL 侧 store_id 过滤自然命中目标店）
+        import dataclasses
+        target_ctx = dataclasses.replace(ctx, store_id=target_store)
+        own = conn is None
+        if own:
+            conn = connect()
+        try:
+            res = cls(conn).run(target_ctx, **params)
+            if res.ok and isinstance(res.data, dict):
+                res.data = {**res.data, "source_store": target_store}
+            return res
+        except Exception as exc:
+            return err(DEPENDENCY_ERROR, str(exc))
+        finally:
+            if own:
+                conn.close()
     own = conn is None
     if own:
         conn = connect()

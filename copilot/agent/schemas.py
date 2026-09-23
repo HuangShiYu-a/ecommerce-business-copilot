@@ -26,6 +26,7 @@ class RouterResult(BaseModel):
     entities: dict = Field(default_factory=dict)
     missing_slots: list[str] = Field(default_factory=list)
     low_confidence: bool = False
+    role: str | None = None   # 方向 A：LLM/规则顺带判定的角色场景（customer_service/operations）
 
 
 class ToolCall(BaseModel):
