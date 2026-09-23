@@ -1,5 +1,7 @@
 """Runtime Orchestrator（Spec-1 §3）：单 Agent Runtime Graph。
 
+DEPRECATED：仅 AGENT_BACKEND=legacy 回退使用；新架构（ReAct）见 copilot/agent/react.py。
+
 节点流：pending_check → router → guardrails → resolver → dispatcher
         → tool_node / workflow_node → finalize；
         handle_pending 处理挂起任务（confirm / slot_fill），clarify 最小澄清。

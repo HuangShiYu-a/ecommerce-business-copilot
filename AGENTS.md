@@ -39,7 +39,7 @@
 |----|------|
 | **服务谁** | 内部 **客服**、**运营**；消费者仍与真人客服沟通 |
 | **不服务谁（V1）** | C 端买家直连 AI、独立销售角色、完整 Admin |
-| **产品形态** | **一个** Agent（Agent Runtime V2：意图路由/多轮记忆/角色提示词/Context/Trace）+ 客服/运营两套 persona + 业务执行层（Workflow Subgraph） |
+| **产品形态** | **一个** Agent（Agent Runtime V2：**ReAct 工具调用式**/多轮记忆/角色提示词/Context/Trace/HITL interrupt）+ 客服/运营两套 persona + 业务执行层（确定性工具 + 审批 Workflow） |
 | **客服形态** | 旁路 Copilot：查事实 → 查规则 → 判定/建议 → **人确认** → 必要时 Action；回复草稿由 LLM 生成（**不是 Tool**） |
 | **运营形态** | 取数 → 确定性算指标 → 异常/健康度/补货建议 → 人确认后再执行类动作 |
 | **Tool 五类** | Query / Analysis（含资格判定）/ Knowledge / Recommendation / Action |
@@ -327,3 +327,4 @@ AI 必须：
 | V1.15 | 2026-09-18 | S2 升至 **V1.0.5**（状态翻转为已批准；§6.1 8 类目、§8.2 SC-CS08-007、§9 conflict 对 + expired）；Knowledge 修复移交用户 Knowledge 窗口 |
 | V1.16 | 2026-09-18 | S3 实施完成（P1–P9 全过门；dev+eval 双世界 53 测试通过）；S3 实施规划升 **V1.1** 含 S4 交接边界声明 |
 | V1.17 | 2026-09-19 | 索引 **Agent Runtime V2 层**：Spec（V1.0，意图路由/多轮记忆/角色提示词/Structured I/O/Trace/续答/路由失败）+ Runtime DB Addendum（V1.0，runtime schema）+ Agent Eval V2（V1.0，双轨评测）；索引 Knowledge 增强计划（V1.0 Draft，23 篇多格式）；Database 文档表数修正 23→22 |
+| V1.18 | 2026-09-23 | **方案 B 落地**：Agent Runtime 从意图路由演进为 **ReAct 工具调用式**（`copilot/agent/react.py`：LLM 看工具目录→自主调用→确定性工具裁定，R4/R5/R10 保持）；索引实施规划 `docs/agent-plan-b-react-v1.md`（V1.5.2）；意图路由（router/registry/llm_router/orchestrator）**归档为 AGENT_BACKEND=legacy 回退（DEPRECATED）**，op05.py 退役 |

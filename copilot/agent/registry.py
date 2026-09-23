@@ -1,5 +1,6 @@
 """Intent Registry（Spec-1 §8.3）：确定性 intent → 执行路径映射。
 
+DEPRECATED：仅 AGENT_BACKEND=legacy 回退使用；新架构（ReAct）见 copilot/agent/react.py。
 LLM 只出语义（intent/entities/missing_slots），执行路径由本 Registry 决定，
 不依赖 LLM 输出 workflow（消除「选错 workflow 再纠错」的冗余环节）。
 """

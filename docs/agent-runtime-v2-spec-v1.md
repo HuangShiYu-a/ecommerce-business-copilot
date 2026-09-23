@@ -2,6 +2,12 @@
 
 版本：V0.1（起草中） · 状态：逐节确认中 · 日期：2026-09-19
 
+> **架构演进（2026-09-23，方案 B 已落地）**：运行时已从「意图路由 + Intent Registry」演进为
+> **ReAct 工具调用式**（`copilot/agent/react.py`：LLM 看工具目录 → 自主调用 → 确定性工具裁定）。
+> 本文档 §8（Router/Intent Registry）、§9.2（中断）等描述的是**已被取代的旧设计**；最新契约见
+> `docs/agent-plan-b-react-v1.md`（V1.5.2）与 `react.py`。意图路由代码保留为
+> `AGENT_BACKEND=legacy` 回退（DEPRECATED）。
+
 **文档定位**：本文件定义 **Agent Runtime / Conversation Layer**（Agent 运行时层）的契约。它位于现有 Business / Tool / RAG / Workflow / DB 冻结契约**之上**，是新增的一层，**不替代、不推翻底层**。
 
 ---
@@ -650,3 +656,12 @@ input → intent → slot → clarification → workflow → tool → tool_args
 | AR-18 | 轨迹渐进显示 | P1 |
 | AR-19 | 任务恢复 / 续答 | P0 |
 | AR-20 | 路由失败处理 | P0 |
+
+---
+
+## 修订记录
+
+| 版本 | 日期 | 说明 |
+|------|------|------|
+| V0.1 | 2026-09-19 | 首版起草：意图路由式 Runtime（§8 Intent Registry、§9.2 非 interrupt HITL）|
+| V0.2 | 2026-09-23 | **架构演进标注**：方案 B（ReAct 工具调用式）已落地，§8/§9.2 被取代；新契约见 `react.py` 与 `docs/agent-plan-b-react-v1.md`；意图路由保留为 `AGENT_BACKEND=legacy` 回退 |

@@ -1,5 +1,6 @@
 """LLM Router（Spec-1 §8.1）：一次 bind_tools 结构化调用 → RouterResult。
 
+DEPRECATED：仅 AGENT_BACKEND=legacy 回退使用；新架构（ReAct）见 copilot/agent/react.py。
 live 模式主路由；dryrun 用 router.route_rules（确定性）。
 意图枚举显式进 tool schema（spike ① 验证：枚举被 schema 约束，非自由标签）。
 """

@@ -1,5 +1,6 @@
 """规则路由（dryrun / 兜底，Spec-1 §8.4）。
 
+DEPRECATED：仅 AGENT_BACKEND=legacy 回退使用；新架构（ReAct）见 copilot/agent/react.py。
 四类角色：① 实体/模式预处理器 ② dryrun 路由器 ③ LLM 失败回退 ④ 硬约束校验。
 **规则不抢在 LLM 前决定意图**（live 模式 LLM 主）；本模块在 LLM_MODE=dryrun
 或 LLM 失败时提供确定性路由，支撑离线评测与降级。
