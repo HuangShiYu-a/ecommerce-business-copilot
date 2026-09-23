@@ -68,7 +68,7 @@ def _extract_entities(text: str) -> dict:
 
 # ---- ReAct system prompt（W2.2）----
 
-def _system_prompt(session: dict, working: dict) -> list[SystemMessage]:
+def _system_prompt(session: dict, working: dict, memory: str = "") -> list[SystemMessage]:
     mode = session.get("workspace_mode") or "UNSET"
     role = "operations" if mode == "UNSET" else mode
     lines = [
@@ -85,11 +85,71 @@ def _system_prompt(session: dict, working: dict) -> list[SystemMessage]:
         "怎么样』，应调用 request_capability(domain='operations')，而不是用库存数据自行判断，"
         "也不是仅文字说明需要运营模式。",
         "缺槽规则：用户未提供 SKU 编码/订单号时，必须向用户询问，禁止编造标识符。",
+        "知识问答（W5.2）：基于检索命中的文档内容作答，并引用文档标题作为来源；"
+        "不要编造未检索到的规则。",
         "任务上下文：" + json.dumps(working, ensure_ascii=False)
         + "（仅记录实体/任务引用；业务事实永远以工具返回为准，勿用此缓存替代查询）。",
         "流程：思考需要的工具→调用→基于工具结果继续→信息足够时给出最终中文回答，引用工具数值。",
     ]
+    if memory:
+        lines.append(memory)   # 用户长期偏好（W5.1，每轮注入）
     return [SystemMessage(content="\n".join(lines))]
+
+
+_MEMORY_LABELS = {
+    "default_horizon": "默认分析时间窗（天）",
+    "response_format": "偏好输出格式",
+}
+
+
+def _memory_block(session: dict) -> str:
+    """每轮读取用户长期偏好（W5.1 读回；补『只写不读』断点）。"""
+    try:
+        from ..runtime.store import get_memory
+        mems = get_memory(int(session.get("user_id") or 1))
+    except Exception:
+        return ""
+    if not mems:
+        return ""
+    parts = []
+    for m in mems:
+        key = m["memory_key"]
+        label = _MEMORY_LABELS.get(key, key)
+        val = m["memory_value"]
+        if key == "default_horizon":
+            parts.append(
+                f"- 默认分析时间窗 {val} 天：调用缺货风险(forecast_days)/补货(horizon_days)等"
+                f"分析工具时，若用户未明确指定时间窗，请使用 {val} 天")
+        else:
+            parts.append(f"- {label}（{key}）: {val}")
+    return "用户长期偏好：\n" + "\n".join(parts)
+
+
+def _default_horizon(session: dict) -> int | None:
+    """W5.1：读 default_horizon 偏好，供分析工具参数确定性默认（不依赖 LLM 自觉）。"""
+    try:
+        from ..runtime.store import get_memory
+        mems = get_memory(int(session.get("user_id") or 1))
+    except Exception:
+        return None
+    for m in mems:
+        if m["memory_key"] == "default_horizon":
+            try:
+                return int(m["memory_value"])
+            except (TypeError, ValueError):
+                return None
+    return None
+
+
+def _extract_memory(session: dict, message: str) -> None:
+    """记忆写入（W5.1 最小扩展，同 legacy 规则）：用户说『默认 N 天』→ default_horizon。"""
+    import re
+
+    from ..runtime.store import upsert_memory
+    m = re.search(r"默认.*?(\d+)\s*天", message)
+    if m:
+        upsert_memory(int(session.get("user_id") or 1), "preference", "default_horizon",
+                      int(m.group(1)), confidence=0.9, source=session.get("session_id"))
 
 
 def _last_user_content(state) -> str:
@@ -117,7 +177,7 @@ def build_react_graph(model=None, mode: str = "UNSET", checkpointer=None,
     def model_node(state: AgentRuntimeState) -> dict:
         exec_ = dict(state.get("execution", {}))
         working = dict(state.get("working", {}))
-        prompt = _system_prompt(state["session"], working)
+        prompt = _system_prompt(state["session"], working, _memory_block(state["session"]))
         resp = bound.invoke(prompt + list(state["messages"]))
         # working state 覆盖：从最新用户消息抽取实体
         new_working = dict(working)
@@ -142,6 +202,15 @@ def build_react_graph(model=None, mode: str = "UNSET", checkpointer=None,
                                         "status": "pending"}, ensure_ascii=False),
                     tool_call_id=tc["id"]))
                 continue
+            # W5.1：记忆确定性默认（缺货风险/补货分析的默认时间窗，不依赖 LLM 自觉）
+            if name == "analyze_stockout_risk" and not args.get("forecast_days"):
+                hz = _default_horizon(state["session"])
+                if hz:
+                    args["forecast_days"] = hz
+            elif name == "op05_restock_workflow" and not args.get("horizon_days"):
+                hz = _default_horizon(state["session"])
+                if hz:
+                    args["horizon_days"] = hz
             t = tool_map.get(name)
             if t is None:
                 out_msgs.append(ToolMessage(content="{'error': '工具不在当前目录'}",
@@ -291,6 +360,9 @@ def run_agent_react(graph, thread_id: str, session: dict, message: str,
         return {"response": resp, "state": out}
 
     resp = dict(out.get("response", {"message": "", "status": "error"}))
+    # W5.1：completed 且非重跑/非审批恢复 → 提取记忆偏好（最小规则：默认 N 天）
+    if not capability_replay and resume is None and resp.get("status") == "completed":
+        _extract_memory(session, message)
     resp["role"] = session.get("workspace_mode") or "operations"
     resp["store_id"] = session.get("store_id", 1)
     return {"response": resp, "state": out}
