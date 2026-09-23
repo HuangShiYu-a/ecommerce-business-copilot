@@ -17,13 +17,17 @@ from __future__ import annotations
 from collections.abc import Callable
 
 from langchain_core.tools import StructuredTool
+from langgraph.types import interrupt
 from pydantic import BaseModel, Field
 
+from ..calc.orders import get_order_detail
+from ..config import AS_OF_DATE
 from ..context import UserContext
 from ..db import connect
 from ..tools import (AnalyzeFulfillmentDelay, AnalyzeSalesAnomaly,
                      AnalyzeStockoutRisk, CalculateProductHealth,
-                     CheckReturnEligibility, GetInventory, GetOrder,
+                     CalculateRestockRecommendation, CheckReturnEligibility,
+                     CreateReturnRequest, GetInventory, GetOrder,
                      GetShippingStatus, QueryProductPerformance,
                      SearchBusinessKnowledge)
 
@@ -158,13 +162,132 @@ def make_request_capability_tool() -> StructuredTool:
     )
 
 
-def build_toolkit(mode: str, ctx_provider: Callable[[], UserContext]) -> list[StructuredTool]:
-    """返回该模式下的 LangChain 工具列表（直连 + 恒在 request_capability meta-tool）。
+# ---- W3.1/W3.2：审批 workflow 工具（T-X-01 不暴露给 LLM，D1/R10）----
 
-    Phase 1 仅含 10 直连工具；workflow 工具（OP-05/CS-08）在 Phase 3 加入。
+class CS08ReturnInput(BaseModel):
+    order_no: str = Field(description="订单号，如 ORD_01_000438")
+    reason: str | None = Field(default=None, description="退货原因（可选）")
+
+
+def make_cs08_workflow_tool(ctx_provider: Callable[[], UserContext]) -> StructuredTool:
+    """CS-08 退货 workflow（客服专属）。
+
+    内部链：T-A-09 资格判定（确定性三态）→ eligible → **interrupt 人审** → 确认后
+    T-X-01 建单 + 审计 + 幂等。资格/审批触发均由结构化结果决定（R5）；写前已重验资格（R10）。
+    T-X-01 不裸露给 LLM——LLM 只能调用本 workflow 工具。
     """
-    return ([make_langchain_tool(c, ctx_provider) for c in _catalog_classes(mode)]
-            + [make_request_capability_tool()])
+    def _run(order_no: str, reason: str | None = None, **kw) -> dict:
+        ctx = ctx_provider()
+        conn = connect()
+        try:
+            res = CheckReturnEligibility(conn).run(ctx, order_no=order_no)
+            if not res.ok:
+                return {"error_code": res.error_code, "error_detail": res.error_detail}
+            data = res.data
+            if data.get("decision") != "eligible":
+                # 不可退/未决 → 不触发 interrupt，直接返回（R5）
+                return {"decision": data.get("decision"),
+                        "reason_code": data.get("reason_code"),
+                        "explanation": data.get("explanation"),
+                        "existing_return": data.get("existing_return")}
+            order = get_order_detail(conn, ctx.store_id, order_no=order_no)
+            if order is None or not order.get("items"):
+                return {"error_code": "DATA_UNAVAILABLE", "error_detail": "订单无明细行"}
+            item = order["items"][0]
+            decision = interrupt({
+                "type": "approval", "workflow": "CS-08", "order_no": order_no,
+                "order_id": order["id"], "item_id": item["id"],
+                "quantity": int(item["quantity"]), "reason": reason or "无理由退货",
+                "message": f"订单 {order_no} 符合退货资格，是否创建退货申请？",
+            })
+            if not (decision and decision.get("decision") == "approved"):
+                return {"decision": "cancelled", "order_no": order_no,
+                        "explanation": "已取消退货申请"}
+            request_id = f"CS08-{order['id']}-{item['id']}"   # 幂等键（重放返回原单）
+            res2 = CreateReturnRequest(conn).run(
+                ctx, order_id=order["id"], item_id=item["id"],
+                quantity=int(item["quantity"]), reason=reason or "无理由退货",
+                request_id=request_id,
+                approval={"decision": "approved", "approver_id": ctx.user_id,
+                          "approved_at": AS_OF_DATE, "comment": "HITL 人工确认"})
+            if res2.ok:
+                return {**res2.data, "eligible_reason": data.get("reason_code")}
+            return {"error_code": res2.error_code, "error_detail": res2.error_detail}
+        finally:
+            conn.close()
+
+    return StructuredTool.from_function(
+        func=_run, name="cs08_return_workflow",
+        description=(
+            "退货流程工具（CS-08）：按订单号走完整退货申请流程——资格判定 → 人工确认 → "
+            "创建退货申请（含审计）。用于：用户要求『真正发起退货/申请退货』（不是只问资格）。"
+            "需要 order_no（reason 可选）。资格判定与建单均以系统结果为准。"),
+        args_schema=CS08ReturnInput,
+    )
+
+
+class OP05RestockInput(BaseModel):
+    sku_code: str = Field(description="SKU 编码，如 SKU_01_STOCKOUT_01")
+    horizon_days: int | None = Field(default=None, description="补货展望天数（可选）")
+    lead_time_days: int | None = Field(default=None, description="采购周期天数（可选）")
+
+
+def make_op05_workflow_tool(ctx_provider: Callable[[], UserContext]) -> StructuredTool:
+    """OP-05 补货 workflow（运营专属）。
+
+    内部链：T-R-01 建议 → HAS_RECO → **interrupt 确认** → 确认=记录确认事件
+    （V1 无采购单写工具，不写业务表）。触发审批由结构化 HAS_RECO 决定（R5）。
+    """
+    def _run(sku_code: str, horizon_days: int | None = None,
+             lead_time_days: int | None = None, **kw) -> dict:
+        ctx = ctx_provider()
+        conn = connect()
+        try:
+            res = CalculateRestockRecommendation(conn).run(
+                ctx, sku_code=sku_code, horizon_days=horizon_days,
+                lead_time_days=lead_time_days)
+            if not res.ok:
+                return {"error_code": res.error_code, "error_detail": res.error_detail}
+            data = res.data
+            rec = int(data.get("recommended_quantity") or 0)
+            if rec <= 0:
+                return {**data, "status": "no_reco"}   # 无建议不 interrupt
+            decision = interrupt({
+                "type": "approval", "workflow": "OP-05", "sku_code": sku_code,
+                "recommended_quantity": rec,
+                "message": f"建议补货 {rec} 件，是否确认执行？",
+            })
+            if not (decision and decision.get("decision") == "approved"):
+                return {**data, "status": "cancelled"}
+            return {**data, "status": "confirmed"}   # V1 仅记录确认事件（不写业务表）
+        finally:
+            conn.close()
+
+    return StructuredTool.from_function(
+        func=_run, name="op05_restock_workflow",
+        description=(
+            "补货流程工具（OP-05）：按 SKU 计算补货建议并走人工确认（有建议时）。"
+            "用于：用户要『补货/补仓/确认补货』的完整流程。需要 sku_code（horizon_days/"
+            "lead_time_days 可选）。建议量以系统计算结果为准。"),
+        args_schema=OP05RestockInput,
+    )
+
+
+def build_toolkit(mode: str, ctx_provider: Callable[[], UserContext]) -> list[StructuredTool]:
+    """返回该模式下的 LangChain 工具列表（直连 + 审批 workflow + request_capability）。
+
+    - OPERATIONS：10 直连 + OP-05 workflow
+    - CUSTOMER_SERVICE：6 公共直连 + CS-08 workflow
+    - UNSET：6 公共直连（无 workflow）
+    - 均含恒在 request_capability meta-tool
+    """
+    tools = [make_langchain_tool(c, ctx_provider) for c in _catalog_classes(mode)]
+    if mode == "OPERATIONS":
+        tools.append(make_op05_workflow_tool(ctx_provider))
+    elif mode == "CUSTOMER_SERVICE":
+        tools.append(make_cs08_workflow_tool(ctx_provider))
+    tools.append(make_request_capability_tool())
+    return tools
 
 
 class RequestCapabilityInput(BaseModel):

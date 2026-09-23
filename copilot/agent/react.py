@@ -172,6 +172,15 @@ def build_react_graph(model=None, mode: str = "UNSET", checkpointer=None,
         exec_ = state.get("execution", {})
         last = state["messages"][-1]
         pending = exec_.get("capability_pending")
+        # 结构化 result：取最后一个 ToolMessage（如 workflow 的 confirmed/cancelled/ineligible）
+        tool_res: dict = {}
+        for m in reversed(state["messages"]):
+            if getattr(m, "type", "") == "tool":
+                try:
+                    tool_res = json.loads(m.content)
+                except Exception:
+                    tool_res = {}
+                break
         if pending:
             resp = {
                 "message": f"该请求需要 {pending['domain']} 能力域。[切换到{pending['domain']}模式后自动继续]",
@@ -186,11 +195,11 @@ def build_react_graph(model=None, mode: str = "UNSET", checkpointer=None,
                 "status": "completed",
                 "needs_user_input": False,
                 "approval_required": False,
-                "result": {},
+                "result": tool_res,
             }
         else:
             resp = {"message": "处理完成", "status": "completed",
-                    "needs_user_input": False, "approval_required": False, "result": {}}
+                    "needs_user_input": False, "approval_required": False, "result": tool_res}
         return {"response": resp}
 
     def _after_tools(state: AgentRuntimeState) -> str:
@@ -227,11 +236,12 @@ def _default_checkpointer():
 
 
 def run_agent_react(graph, thread_id: str, session: dict, message: str,
-                    capability_replay: bool = False) -> dict:
+                    capability_replay: bool = False, resume: dict | None = None) -> dict:
     """ReAct 一轮执行（legacy run_agent 兼容信封）。
 
     capability_replay（D12）：用户确认切换模式后的重跑——同一 thread、不追加用户消息、
     输入 capability_confirmed 系统旁注、清空 capability_pending（原消息仍在 messages 中）。
+    resume（W3.3）：审批确认/拒绝——以 Command(resume=...) 恢复被 interrupt 的 workflow 工具。
     """
     config = {"configurable": {"thread_id": thread_id}}
     try:
@@ -245,24 +255,40 @@ def run_agent_react(graph, thread_id: str, session: dict, message: str,
         session = {**session, "workspace_mode": saved_session["workspace_mode"],
                    "store_id": saved_session.get("store_id")}
 
-    if capability_replay:
-        execution["capability_pending"] = None
-        inputs: AgentRuntimeState = {
-            "session": session, "working": working, "execution": execution,
-            "messages": [SystemMessage(
-                content=f"用户已确认切换到 {session.get('workspace_mode')} 模式，请继续处理上一条请求。")],
-        }
-    else:
-        inputs = {
-            "session": session, "working": working, "execution": execution,
-            "messages": [HumanMessage(content=message)],
-        }
-
     token = _CURRENT_SESSION.set(session)
     try:
-        out = graph.invoke(inputs, config)
+        if resume is not None:
+            from langgraph.types import Command
+            out = graph.invoke(Command(resume=resume), config)
+        elif capability_replay:
+            execution["capability_pending"] = None
+            out = graph.invoke({
+                "session": session, "working": working, "execution": execution,
+                "messages": [SystemMessage(
+                    content=f"用户已确认切换到 {session.get('workspace_mode')} 模式，请继续处理上一条请求。")],
+            }, config)
+        else:
+            out = graph.invoke({
+                "session": session, "working": working, "execution": execution,
+                "messages": [HumanMessage(content=message)],
+            }, config)
     finally:
         _CURRENT_SESSION.reset(token)
+
+    # 审批 interrupt（W3.3）：workflow 工具触发 interrupt → 图暂停 → approval_required 响应
+    interrupts = out.get("__interrupt__") or []
+    if interrupts:
+        val = interrupts[0].value if hasattr(interrupts[0], "value") else interrupts[0]
+        resp = {
+            "message": val.get("message", "需要审批确认"),
+            "status": "approval_required",
+            "needs_user_input": True,
+            "approval_required": True,
+            "result": val,
+        }
+        resp["role"] = session.get("workspace_mode") or "operations"
+        resp["store_id"] = session.get("store_id", 1)
+        return {"response": resp, "state": out}
 
     resp = dict(out.get("response", {"message": "", "status": "error"}))
     resp["role"] = session.get("workspace_mode") or "operations"
