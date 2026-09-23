@@ -152,6 +152,27 @@ def _extract_memory(session: dict, message: str) -> None:
                       int(m.group(1)), confidence=0.9, source=session.get("session_id"))
 
 
+def _persist_session(session: dict, thread_id: str, status: str, message: str,
+                     tool_names: list[str] | None = None) -> None:
+    """ReAct 会话/日志持久化（W6 决策 1）：写 runtime.session（侧栏/重启）+ run_log。
+
+    降级不阻断：持久化失败不干扰对话。workspace_mode 直接写 role 列（侧栏徽章映射）。
+    """
+    try:
+        from ..runtime.store import create_session, write_run_log
+        sid = session.get("session_id", "")
+        uid = int(session.get("user_id") or 1)
+        role = session.get("workspace_mode") or "operations"
+        store = int(session.get("store_id") or 1)
+        create_session(sid, thread_id, uid, role, store, title=message[:20] or None)
+        write_run_log(
+            f"react-{int(time.time() * 1000)}-{thread_id[:8]}", sid, uid, role, store,
+            intent=(tool_names[-1] if tool_names else None), workflow=None,
+            route_status=status, tool_calls=tool_names, status=status)
+    except Exception:
+        pass
+
+
 def _last_user_content(state) -> str:
     for m in reversed(state["messages"]):
         if isinstance(m, HumanMessage):
@@ -355,14 +376,18 @@ def run_agent_react(graph, thread_id: str, session: dict, message: str,
             "approval_required": True,
             "result": val,
         }
+        if not capability_replay and resume is None:
+            _persist_session(session, thread_id, "approval_required", message)
         resp["role"] = session.get("workspace_mode") or "operations"
         resp["store_id"] = session.get("store_id", 1)
         return {"response": resp, "state": out}
 
     resp = dict(out.get("response", {"message": "", "status": "error"}))
     # W5.1：completed 且非重跑/非审批恢复 → 提取记忆偏好（最小规则：默认 N 天）
-    if not capability_replay and resume is None and resp.get("status") == "completed":
-        _extract_memory(session, message)
+    if not capability_replay and resume is None:
+        if resp.get("status") == "completed":
+            _extract_memory(session, message)
+        _persist_session(session, thread_id, resp.get("status", "error"), message)
     resp["role"] = session.get("workspace_mode") or "operations"
     resp["store_id"] = session.get("store_id", 1)
     return {"response": resp, "state": out}

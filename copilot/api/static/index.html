@@ -12,15 +12,16 @@
     .turn { margin: .4rem 0; padding: .6rem; border-radius: 6px; white-space: pre-wrap; }
     .u { background: #eef3fb; }
     .a { background: #f6f8fa; }
-    #confirmBar { display: none; }
+    #confirmBar, #capBar { display: none; }
   </style>
 </head>
 <body>
   <h1>E-commerce Business Copilot</h1>
   <div class="row">
-    <select id="role">
-      <option value="operations">运营</option>
-      <option value="customer_service">客服</option>
+    <select id="mode">
+      <option value="UNSET">未锁定</option>
+      <option value="OPERATIONS">运营</option>
+      <option value="CUSTOMER_SERVICE">客服</option>
     </select>
     <select id="store">
       <option value="1">Store 01</option>
@@ -35,6 +36,9 @@
     <button id="send">发送</button>
     <span id="sessionLabel"></span>
   </div>
+  <div id="capBar" class="row">
+    <button id="capSwitch">切换到运营模式并继续</button>
+  </div>
   <div id="confirmBar" class="row">
     <span id="confirmText"></span>
     <button id="accept">确认</button>
@@ -43,6 +47,7 @@
   <div id="log"></div>
   <script>
     let sessionId = null;
+    let pendingCap = null;          // {domain, original_message}
 
     async function post(path, body) {
       const r = await fetch(path, {
@@ -62,34 +67,50 @@
     }
 
     async function createSession() {
-      const s = await post("/api/session", { user_id: 1, role: role.value, store_id: Number(store.value) });
+      const s = await post("/api/session", { user_id: 1, workspace_mode: mode.value, store_id: Number(store.value) });
       sessionId = s.session_id;
+      pendingCap = null;
       sessionLabel.textContent = "会话 " + sessionId;
       log.innerHTML = "";
       confirmBar.style.display = "none";
+      capBar.style.display = "none";
       render({ role: "assistant", content: s.message });
     }
 
-    async function sendMsg(text) {
+    async function callAgent(body, replay) {
       if (!sessionId) await createSession();
       confirmBar.style.display = "none";
-      render({ role: "user", content: text });
-      const res = await post("/api/agent", {
-        session_id: sessionId, user_id: 1, role: role.value,
-        store_id: Number(store.value), message: text,
-      });
+      capBar.style.display = "none";
+      if (!replay) render({ role: "user", content: body.message });
+      const res = await post("/api/agent", Object.assign({ session_id: sessionId, user_id: 1 }, body));
       render({ role: "assistant", content: res.message });
-      if (res.needs_user_input) {
+      if (res.capability_required && res.capability_pending) {
+        pendingCap = res.capability_pending;
+        capSwitch.textContent = "切换到" + (pendingCap.domain === "operations" ? "运营" : "客服") + "模式并继续";
+        capBar.style.display = "flex";
+      } else if (res.approval_required) {
+        confirmText.textContent = "需要审批确认：";
         confirmBar.style.display = "flex";
-        confirmText.textContent = "需要确认：";
       }
     }
 
+    function sendMsg(text, replay) {
+      const msg = text || msgInput.value;
+      callAgent({
+        workspace_mode: mode.value, store_id: Number(store.value),
+        message: replay ? "" : msg, capability_replay: !!replay,
+      }, !!replay);
+    }
+
     newSession.onclick = createSession;
-    send.onclick = () => sendMsg(msg.value);
-    accept.onclick = () => sendMsg("确认");
-    reject.onclick = () => sendMsg("拒绝");
-    msg.onkeydown = (e) => { if (e.key === "Enter") sendMsg(msg.value); };
+    send.onclick = () => sendMsg();
+    capSwitch.onclick = () => {
+      if (pendingCap) mode.value = pendingCap.domain;
+      sendMsg("", true);   // capability_replay：同 thread 重跑原请求
+    };
+    accept.onclick = () => callAgent({ workspace_mode: mode.value, store_id: Number(store.value), message: "", resume: { decision: "approved" } });
+    reject.onclick = () => callAgent({ workspace_mode: mode.value, store_id: Number(store.value), message: "", resume: { decision: "rejected" } });
+    msg.onkeydown = (e) => { if (e.key === "Enter") sendMsg(); };
     createSession();
   </script>
 </body>
