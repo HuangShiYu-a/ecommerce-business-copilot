@@ -99,3 +99,19 @@ def test_capability_replay_no_duplicate_user():
     user_msgs = [m for m in msgs if isinstance(m, HumanMessage)]
     assert len(user_msgs) == 1, f"重跑不得追加用户消息: {user_msgs}"
     assert _persisted(g2, "t4")["execution"]["capability_pending"] is None
+
+
+# ---- 响应信封断言（W2.5 / G4 核查）----
+
+def test_response_envelope_shape():
+    fake = _fake(AIMessage(content="你好，我是运营助手"))
+    g = build_react_graph(model=fake, mode="OPERATIONS")
+    out = run_agent_react(g, "t_env", _session("OPERATIONS", "se"), "你好")
+    resp = out["response"]
+    for k in ("message", "status", "needs_user_input", "approval_required",
+              "result", "role", "store_id"):
+        assert k in resp, f"缺信封字段 {k}"
+    assert resp["status"] == "completed"
+    assert resp["needs_user_input"] is False
+    assert resp["approval_required"] is False
+    assert resp["role"] == "OPERATIONS"
