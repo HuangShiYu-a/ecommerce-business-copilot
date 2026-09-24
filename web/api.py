@@ -53,12 +53,9 @@ def load_conversation(graph, thread_id: str) -> list[dict]:
 
 
 def capability_pending(graph, thread_id: str) -> dict | None:
-    """读 AgentState.execution_context.capability_pending（供 UI 渲染能力切换按钮）。"""
-    try:
-        values = graph.get_state({"configurable": {"thread_id": thread_id}}).values
-        return (values.get("execution") or {}).get("capability_pending")
-    except Exception:
-        return None
+    """读 AgentState.execution_context.capability_pending（供 UI 渲染能力切换按钮/文本确认）。"""
+    from copilot.agent.react import read_capability_pending
+    return read_capability_pending(graph, thread_id)
 
 
 def send(runtime, thread_id: str, session: dict, message: str,
@@ -71,6 +68,12 @@ def send(runtime, thread_id: str, session: dict, message: str,
             sess["role"] = mode_to_role(session.get("workspace_mode") or session.get("role"))
             out = run_agent(runtime, thread_id, sess, message)
         else:
+            # P1：文本动作解析（能力切换 / 审批确认，用户打字而非点按钮）
+            if resume is None and not capability_replay and message:
+                from copilot.agent.react import resolve_text_action
+                session, resume, capability_replay = resolve_text_action(
+                    runtime.get(session.get("workspace_mode") or "UNSET"),
+                    thread_id, session, message)
             graph = runtime.get(session.get("workspace_mode") or "UNSET")
             out = run_agent_react(graph, thread_id, session, message,
                                   capability_replay=capability_replay, resume=resume)

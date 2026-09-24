@@ -152,6 +152,98 @@ def _extract_memory(session: dict, message: str) -> None:
                       int(m.group(1)), confidence=0.9, source=session.get("session_id"))
 
 
+def _sanitize_for_model(messages) -> list:
+    """剥离发给 LLM 的历史中无对应 ToolMessage 的悬空 tool_calls（防 DeepSeek 400
+    'insufficient tool messages following tool_calls'）。
+
+    悬空来源：审批 interrupt（workflow 工具未返回）或 max_iterations/max_tool_calls 兜底命中。
+    只作用于发给模型的副本，不改持久化 state。
+    """
+    answered = {getattr(m, "tool_call_id", None) for m in messages
+                if getattr(m, "type", "") == "tool"}
+    out = []
+    for m in messages:
+        tcs = getattr(m, "tool_calls", None)
+        if not tcs:
+            out.append(m)
+            continue
+        keep = [tc for tc in tcs if tc.get("id") in answered]
+        if len(keep) == len(tcs):
+            out.append(m)
+            continue
+        if not keep and not (getattr(m, "content", "") or "").strip():
+            # 全部悬空且无内容：转成说明消息（保留 assistant 轮次，避免破坏交替）
+            out.append(AIMessage(content="[上一轮工具调用未完成，已忽略]"))
+        else:
+            try:
+                out.append(m.model_copy(update={"tool_calls": keep}))
+            except Exception:
+                out.append(m)
+    return out
+
+
+def read_capability_pending(graph, thread_id: str) -> dict | None:
+    """读 AgentState.execution_context.capability_pending（供 UI/API 层判断文本确认切换）。"""
+    try:
+        values = graph.get_state({"configurable": {"thread_id": thread_id}}).values
+        return (values.get("execution") or {}).get("capability_pending")
+    except Exception:
+        return None
+
+
+# 审批 workflow 工具（用于识别挂起的审批 interrupt）
+_APPROVAL_WORKFLOW_TOOLS = {"cs08_return_workflow", "op05_restock_workflow"}
+_APPROVAL_ACCEPT = ("确认", "同意")
+_APPROVAL_REJECT = ("拒绝", "取消")
+
+
+def resolve_approval_text(graph, thread_id: str, message: str) -> dict | None:
+    """审批文本确认（P1）：末尾悬空 workflow tool_call + 确认/拒绝 → resume 决策。
+
+    返回 {"decision": "approved"|"rejected"} 或 None。用户打字而非点按钮时的路径。
+    """
+    if not (message or "").strip():
+        return None
+    try:
+        values = graph.get_state({"configurable": {"thread_id": thread_id}}).values
+        msgs = values.get("messages") or []
+        last = msgs[-1] if msgs else None
+        if getattr(last, "type", "") == "ai" and getattr(last, "tool_calls", None):
+            names = {tc.get("name") for tc in last.tool_calls}
+            if names & _APPROVAL_WORKFLOW_TOOLS:
+                msg = message.strip().lower()
+                if any(k in msg for k in _APPROVAL_ACCEPT):
+                    return {"decision": "approved"}
+                if any(k in msg for k in _APPROVAL_REJECT):
+                    return {"decision": "rejected"}
+    except Exception:
+        pass
+    return None
+
+
+def resolve_text_action(graph, thread_id: str, session: dict, message: str) -> tuple[dict, dict | None, bool]:
+    """文本动作解析（P1）：用户打字而非点按钮。
+
+    能力切换：capability_pending + 确认词 → (切到新 mode 的 session, None, capability_replay=True)
+    审批：末尾悬空 workflow tool_call + 确认/拒绝 → (session, resume, False)
+    其余 → (session, None, False)（reject/无关消息：pending 由 run_agent_react 新轮清掉）
+    """
+    try:
+        pending = read_capability_pending(graph, thread_id)
+        if pending:
+            from ..context import capability_text_decision, normalize_mode
+            if capability_text_decision(message) == "confirm":
+                return {**session,
+                        "workspace_mode": normalize_mode(pending.get("domain"))}, None, True
+            return session, None, False
+        d = resolve_approval_text(graph, thread_id, message)
+        if d:
+            return session, d, False
+    except Exception:
+        pass
+    return session, None, False
+
+
 def _persist_session(session: dict, thread_id: str, status: str, message: str,
                      tool_names: list[str] | None = None) -> None:
     """ReAct 会话/日志持久化（W6 决策 1）：写 runtime.session（侧栏/重启）+ run_log。
@@ -199,7 +291,8 @@ def build_react_graph(model=None, mode: str = "UNSET", checkpointer=None,
         exec_ = dict(state.get("execution", {}))
         working = dict(state.get("working", {}))
         prompt = _system_prompt(state["session"], working, _memory_block(state["session"]))
-        resp = bound.invoke(prompt + list(state["messages"]))
+        # P0：清洗悬空 tool_calls（防 400）
+        resp = bound.invoke(prompt + _sanitize_for_model(state["messages"]))
         # working state 覆盖：从最新用户消息抽取实体
         new_working = dict(working)
         new_working.update(_extract_entities(_last_user_content(state)))
@@ -216,7 +309,8 @@ def build_react_graph(model=None, mode: str = "UNSET", checkpointer=None,
             name = tc.get("name")
             args = dict(tc.get("args") or {})
             if name == "request_capability":
-                pending = {"domain": args.get("domain"),
+                from ..context import normalize_mode
+                pending = {"domain": normalize_mode(args.get("domain")),
                            "original_message": _last_user_content(state)}
                 out_msgs.append(ToolMessage(
                     content=json.dumps({"capability_requested": args.get("domain"),
@@ -344,6 +438,11 @@ def run_agent_react(graph, thread_id: str, session: dict, message: str,
     if not session.get("workspace_mode") and saved_session.get("workspace_mode"):
         session = {**session, "workspace_mode": saved_session["workspace_mode"],
                    "store_id": saved_session.get("store_id")}
+
+    # P1：新轮（非 resume/replay）清掉过期 capability_pending——用户未确认即离开，
+    # 防 route 误判阻塞后续工具调用（文本确认/拒绝在 web/api 层已先处理）
+    if resume is None and not capability_replay:
+        execution["capability_pending"] = None
 
     token = _CURRENT_SESSION.set(session)
     try:

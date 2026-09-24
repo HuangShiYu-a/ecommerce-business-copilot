@@ -77,8 +77,16 @@ def agent(req: AgentRequest) -> AgentResponse:
         result = run_agent(RUNTIME, req.session_id, sess, req.message)
     else:
         graph = RUNTIME.get(req.workspace_mode)
+        resume, capability_replay = req.resume, req.capability_replay
+        # P1：文本动作解析（能力切换 / 审批确认，用户打字而非点按钮）
+        if resume is None and not capability_replay and req.message:
+            from ..agent.react import resolve_text_action
+            session, resume, capability_replay = resolve_text_action(
+                graph, req.session_id, session, req.message)
+            if capability_replay:
+                graph = RUNTIME.get(session["workspace_mode"])
         result = run_agent_react(graph, req.session_id, session, req.message,
-                                 capability_replay=req.capability_replay, resume=req.resume)
+                                 capability_replay=capability_replay, resume=resume)
     resp = result["response"]
     result_ = resp.get("result") or {}
     return AgentResponse(

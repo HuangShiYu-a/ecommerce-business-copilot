@@ -69,7 +69,7 @@ def test_capability_pending_unset():
     assert resp["status"] == "capability_required"
     assert resp["needs_user_input"] is True
     pending = out["state"]["execution"]["capability_pending"]
-    assert pending["domain"] == "operations"
+    assert pending["domain"] == "OPERATIONS"          # 已归一化为大写（工具/工厂约定）
     assert pending["original_message"] == msg
 
 
@@ -115,3 +115,48 @@ def test_response_envelope_shape():
     assert resp["needs_user_input"] is False
     assert resp["approval_required"] is False
     assert resp["role"] == "OPERATIONS"
+
+
+# ---- P0/P1 修复测试（多轮 400 清洗 + 文本确认）----
+
+def test_sanitize_strips_dangling_tool_calls():
+    from langchain_core.messages import ToolMessage
+
+    from copilot.agent.react import _sanitize_for_model
+    msgs = [
+        AIMessage(content="", tool_calls=[tool_call("get_inventory", {"sku_code": "X"})]),
+        ToolMessage(content="{}", tool_call_id="c1"),            # 已应答 → 保留
+        AIMessage(content="", tool_calls=[tool_call("cs08_return_workflow",
+                                                    {"order_no": "O"}, tid="c2")]),   # 悬空（id c2 无 ToolMessage）
+    ]
+    out = _sanitize_for_model(msgs)
+    assert out[0].tool_calls, "已应答的 tool_calls 应保留"
+    assert not out[-1].tool_calls, "悬空 tool_calls 应被剥离"
+
+
+def test_resolve_text_capability_confirm():
+    from copilot.agent.react import build_react_graph, resolve_text_action
+    fake = _fake(AIMessage(content="", tool_calls=[
+        tool_call("request_capability", {"domain": "operations"})]))
+    g = build_react_graph(model=fake, mode="UNSET")
+    sess = _session("UNSET", "sc")
+    run_agent_react(g, "tc1", sess, "SKU_01_STOCKOUT_01 缺货风险怎么样")   # pending
+    nsess, resume, replay = resolve_text_action(g, "tc1", sess, "切换")
+    assert nsess["workspace_mode"] == "OPERATIONS"
+    assert resume is None and replay is True
+
+
+def test_resolve_text_approval_confirm_reject():
+    from copilot.agent.react import build_react_graph, resolve_text_action
+    fake = _fake(AIMessage(content="", tool_calls=[
+        tool_call("cs08_return_workflow", {"order_no": "ORD_01_000438"})]),
+        AIMessage(content="完成"))
+    g = build_react_graph(model=fake, mode="CUSTOMER_SERVICE")
+    sess = _session("CUSTOMER_SERVICE", "sa")
+    run_agent_react(g, "ta1", sess, "ORD_01_000438 申请退货")    # interrupt → approval_required
+    _, r1, _ = resolve_text_action(g, "ta1", sess, "确认")
+    assert r1 == {"decision": "approved"}
+    _, r2, _ = resolve_text_action(g, "ta1", sess, "拒绝")
+    assert r2 == {"decision": "rejected"}
+    _, r3, _ = resolve_text_action(g, "ta1", sess, "看看别的")
+    assert r3 is None
