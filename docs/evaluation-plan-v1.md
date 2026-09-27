@@ -27,7 +27,7 @@
 ```
 P0     M1 Tool Plan Correctness       Tool Set Precision / Recall / Exact + Argument Accuracy
        M2 Task Success                业务结果 + 业务约束 + 副作用 + Final Answer Fidelity
-       M3 Conditional Orchestration   Trace Invariant（HIGH 深挖 / LOW 早停）+ 有效性约束
+       M3 Conditional Orchestration   Trace Invariant（HIGH 深挖 / NORMAL 早停）+ 有效性约束
        M4 RAG Retrieval               Hit@5 / MRR@10 + Correct/False Abstention + Conflict Resolution
        M5 E2E Performance             pooled P50/P95（Pre/Post-HITL 拆分；warm-up；报 N）
        M6 Safety / Guardrail          越权 Attempt/Block/Execution 三层 + 审批绕过 + 缺槽臆造
@@ -98,7 +98,7 @@ P1     nDCG / Dense-vs-Hybrid / LLM-as-judge / 复杂 Reranker / 复杂负载   
 ```
 
 **判定用 Trace Invariant，不用固定序列**（顺序合法地不同）。
-**HIGH 侧受数据限制**：dev 世界 R_STOCKOUT 仅 2 个 SKU（skU_roles.csv），LOW 侧 81 个 NORMAL 充足。方案：HIGH 有限 SKU 换问法；标注时实测 ANOMALY_DROP/SLOW 是否判 HIGH 扩量；报告注明"HIGH 规模受业务测试数据分布限制"，不包装成大规模泛化实验。
+**HIGH 侧受数据限制**：实测 dev 世界仅 1 个 HIGH 风险 SKU（`SKU_01_STOCKOUT_01`）；`SKU_01_ANOMALY_DROP_01` 实测 NORMAL、`SLOW_01`/`OVERSTOCK_01` 对缺货风险返回 DATA_UNAVAILABLE（慢销品近窗无销量）。NORMAL（早停）侧 81 个 R_NORMAL SKU 充足。方案：HIGH 用例 = 1 SKU × 多种问法；NORMAL 侧多 SKU × 多问法；报告注明"HIGH 规模受业务测试数据分布限制"，不包装成大规模泛化实验。
 **有效性约束**：检查调用数不触发熔断（max_iterations=6 / max_tool_calls=12），禁止"无意义多跳循环"。
 
 ### 2.3 RAG-Set：检索评测（扩 8 → ~30 条）
@@ -308,7 +308,7 @@ scripts/eval_metrics.py
 |---|---|---|
 | 中 | live 方差（DeepSeek 随机性） | repeat=3 报均值 + 稳定性（case 3/3 比例）；temperature=0 |
 | 中 | M1/M3 标注歧义 | acceptable plan/args 允许多路径；标注用户复核 |
-| 中 | M3 HIGH 数据受限（仅 2 R_STOCKOUT SKU） | 换问法 + 实测 ANOMALY_DROP/SLOW；报告注明规模限制 |
+| 中 | M3 HIGH 数据受限（实测仅 1 个 HIGH SKU） | HIGH 换问法 + NORMAL 侧多 SKU；报告注明规模限制 |
 | 中 | legacy 长期未 live，跑出覆盖缺口 | 限定可比 case + 报 coverage；缺口本身是故事 |
 | 低 | RAG gold 扩到 30 的标签质量 | 黄金文档标题唯一，用户复核 |
 | 低 | live 冷启动污染 P95 | warm-up 3~5 次 + 冷启动样本剔除另报 |
@@ -327,3 +327,4 @@ README 分四层展示：Correctness（160 tests）/ Effectiveness（M1~M4, M7�
 | V1.0 | 2026-09-26 | 首版（核心 4 类 + 条件多跳，offline+live 双阶段） |
 | V1.1 | 2026-09-26 | **冻结**。两轮外部审查 + 代码核对后：新增 M6 Safety（越权三层/审批绕过/缺槽臆造）、M7 Grounded Answer（gold-facts）、M8 Legacy vs ReAct Baseline；M1 gold 支持 no_tool/clarify；M2 补 Final Answer Fidelity 四层；M4 拆 Correct/False Abstention、doc 级 acceptable_docs；M5 加 warm-up/N/pooled/Pre-Post HITL；补 Reproducibility Metadata；nDCG/Hybrid/Judge 明确降 P1 |
 | V1.2 | 2026-09-27 | **仅定义修正，指标集不变**。M4 Recall@5→Hit@5、Abstention 明确 Retrieval 级（Answer 级归 M7/M2）；M1 no_tool/clarify 的 Precision/Recall 标 N/A；M6 拆结构性 fake 测试 + live 行为测试两源（防 Block/Execution 0/0）；M2 补 forbidden_facts；M2/M3/M7 统一 required_facts；M5 graph build 不计 E2E（warm/cached graph）；M8 coverage 公式显式化 + 结构性不支持标 N/A 不标 0% + 非严格因果表述纪律；M7 Citation 改名 Citation Retrieval Support；Metadata 补 embedding_model/retrieval_config_version；各数据集只共享字段约定不统一文件结构 |
+| V1.2.1 | 2026-09-27 | 数据实测口径修正（非定义变更）：M3 风险枚举为 **HIGH/NORMAL**（原文 LOW 系笔误）；HIGH 侧实测仅 1 个 SKU（`SKU_01_STOCKOUT_01`；ANOMALY_DROP=NORMAL、SLOW/OVERSTOCK 对缺货风险 DATA_UNAVAILABLE）；§7 风险行同步 |

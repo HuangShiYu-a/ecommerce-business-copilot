@@ -64,7 +64,7 @@ def main() -> int:
             done = cur.fetchone()[0]
             cur.execute("SELECT vector_dims(embedding) FROM knowledge.knowledge_chunks LIMIT 1")
             dim = cur.fetchone()[0]
-        print(f"✅ 已填充 {done}/82 个 chunk，维度={dim}")
+        print(f"已填充 {done}/82 个 chunk，维度={dim}")
         return 0
     finally:
         conn.close()
