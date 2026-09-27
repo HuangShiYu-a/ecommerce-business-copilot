@@ -129,8 +129,19 @@ def test_ta09_rule_conflict():
 
 @pytest.fixture
 def _clean_tx01():
-    yield
     from copilot.db import connect
+
+    # P5：前置清理 CS08 残留（手动 live 测试会建 CS08-* 行；test_restock 按字母序先于
+    # test_workflow 运行，不前置清理会被可退数量校验误伤）。
+    conn = connect()
+    cur = conn.cursor()
+    cur.execute("DELETE FROM after_sales_requests WHERE idempotency_key LIKE 'CS08-%'")
+    cur.execute("DELETE FROM audit_logs WHERE request_id LIKE 'CS08-%' AND action='CREATE_RETURN_REQUEST'")
+    conn.commit()
+    cur.close()
+    conn.close()
+
+    yield
     conn = connect()
     cur = conn.cursor()
     cur.execute("DELETE FROM audit_logs WHERE request_id LIKE 'tx01_%'")

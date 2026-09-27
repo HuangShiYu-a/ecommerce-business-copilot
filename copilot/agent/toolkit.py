@@ -24,6 +24,7 @@ from ..calc.orders import get_order_detail
 from ..config import AS_OF_DATE
 from ..context import UserContext
 from ..db import connect
+from ..tool import run_tool
 from ..tools import (AnalyzeFulfillmentDelay, AnalyzeSalesAnomaly,
                      AnalyzeStockoutRisk, CalculateProductHealth,
                      CalculateRestockRecommendation, CheckReturnEligibility,
@@ -54,7 +55,8 @@ _DESCRIPTIONS: dict[str, str] = {
     "check_return_eligibility": (
         "按订单号判定退货资格三态（eligible/ineligible/undetermined）。"
         "用于：『能退吗/退货资格』。需要 order_no。"
-        "**不要**用于『真正发起退货』——那走 CS-08 workflow。返回即正式资格判定。"),
+        "**不要**用于『真正发起退货』——那走 CS-08 workflow。返回即正式资格判定。"
+        "仅回答能否退货的咨询；用户要『申请/发起退货』时必须走 cs08_return_workflow。"),
     "query_product_performance": (
         "低动销候选筛选（mode=slow_moving）。"
         "用于：『有没有慢销/滞销商品』。给 sku_code 单查或 category 类目扫描（二选一）。"
@@ -67,7 +69,8 @@ _DESCRIPTIONS: dict[str, str] = {
         "用于：『销售异常/骤降/暴涨』。需要 sku_code。返回即正式异常判定。"),
     "analyze_stockout_risk": (
         "按 SKU 评估缺货风险等级（HIGH/NORMAL），支持 forecast_days 时间窗。"
-        "用于：『缺货风险/会不会断货/够不够卖』。需要 sku_code（forecast_days 可选）。返回即正式风险判定。"),
+        "用于：『缺货风险/会不会断货/够不够卖』。需要 sku_code（forecast_days 可选）。返回即正式风险判定。"
+        "只评估风险；用户要『补货/执行补货』时走 op05_restock_workflow。"),
 }
 
 # ---- D11：V1 只删确定冗余字段 ----
@@ -98,12 +101,15 @@ def make_langchain_tool(tool_cls, ctx_provider: Callable[[], UserContext]) -> St
     """把一个 Tool 子类转成 LangChain StructuredTool。
 
     ctx_provider 在每次调用时解析 ctx；工具失败返回结构化 error dict（不 raise）。
+    经 run_tool 执行（F7）：复用 ISO 跨店读放开 + source_store 标注，与 legacy/eval
+    语义一致，修复 ReAct 直连工具跨店读返回 NOT_FOUND 的断层。写工具仍限店（本目录
+    10 直连工具均为 read，写路径走 workflow 工具不经此处）。
     """
     def _run(**params):
         ctx = ctx_provider()
         conn = connect()
         try:
-            res = tool_cls(conn).run(ctx, **params)
+            res = run_tool(tool_cls.tool_id, ctx, conn=conn, **params)
         finally:
             conn.close()
         if res.ok:
@@ -221,7 +227,8 @@ def make_cs08_workflow_tool(ctx_provider: Callable[[], UserContext]) -> Structur
         description=(
             "退货流程工具（CS-08）：按订单号走完整退货申请流程——资格判定 → 人工确认 → "
             "创建退货申请（含审计）。用于：用户要求『真正发起退货/申请退货』（不是只问资格）。"
-            "需要 order_no（reason 可选）。资格判定与建单均以系统结果为准。"),
+            "触发词：申请退货、帮我退货、发起退货、办理退货。需要 order_no（reason 可选）。"
+            "资格判定与建单均以系统结果为准。"),
         args_schema=CS08ReturnInput,
     )
 
@@ -269,8 +276,9 @@ def make_op05_workflow_tool(ctx_provider: Callable[[], UserContext]) -> Structur
         func=_run, name="op05_restock_workflow",
         description=(
             "补货流程工具（OP-05）：按 SKU 计算补货建议并走人工确认（有建议时）。"
-            "用于：用户要『补货/补仓/确认补货』的完整流程。需要 sku_code（horizon_days/"
-            "lead_time_days 可选）。建议量以系统计算结果为准。"),
+            "用于：用户要『补货/补仓/确认补货』的完整流程。触发词：补货、补仓、执行补货、"
+            "生成补货建议。只问『需不需要补货/要不要补』用 analyze_stockout_risk 即可。"
+            "需要 sku_code（horizon_days/lead_time_days 可选）。建议量以系统计算结果为准。"),
         args_schema=OP05RestockInput,
     )
 

@@ -70,10 +70,13 @@ def _extract_entities(text: str) -> dict:
 
 def _system_prompt(session: dict, working: dict, memory: str = "") -> list[SystemMessage]:
     mode = session.get("workspace_mode") or "UNSET"
-    role = "operations" if mode == "UNSET" else mode
+    role = (mode or "UNSET").lower()          # F3：UNSET → 中立 persona（不自称运营/客服）
     lines = [
         get_persona(role),
         f"当前工作模式（Workspace Mode）：{mode}；store_id={session.get('store_id', 1)}。",
+        "数据范围（ISO）：读取可跨店——引用其他门店标识（ORD_02_*/SKU_02_*）时，工具返回会标注 "
+        "source_store，属正式数据可直接用于结论；回复涉及跨店数据时须向用户说明来源门店；"
+        "**写操作仅限当前会话门店**，跨店写会被拒绝。",
         "R4 安全红线：正式结论（补货量/风险等级/资格三态/异常判定/库存）一律以工具返回值为准，"
         "禁止自行推算或编造数值。"
         "若任务需要当前目录之外的权威工具（如缺货风险/销售异常等运营分析），**不得用其他工具"
@@ -83,12 +86,19 @@ def _system_prompt(session: dict, working: dict, memory: str = "") -> list[Syste
         + "）。若任务需要目录之外的专属工具，调用 request_capability(domain) 请求切换——"
         "不要编造或猜测目录外工具。示例：当前无运营工具时用户问『SKU_01_STOCKOUT_01 缺货风险"
         "怎么样』，应调用 request_capability(domain='operations')，而不是用库存数据自行判断，"
-        "也不是仅文字说明需要运营模式。",
+        "也不是仅文字说明需要运营模式。"
+        "F4：当任务需要当前模式目录之外的能力时，**必须立刻调用 request_capability(domain) "
+        "发起切换申请**，不要用文字说明代替，也不要等用户追问后再申请。"
+        "若用户已明确同意切换（如回复『好的/切换』），也应调用 request_capability(domain) 正式发起申请。",
         "缺槽规则：用户未提供 SKU 编码/订单号时，必须向用户询问，禁止编造标识符。",
         "知识问答（W5.2）：基于检索命中的文档内容作答，并引用文档标题作为来源；"
         "不要编造未检索到的规则。",
         "任务上下文：" + json.dumps(working, ensure_ascii=False)
         + "（仅记录实体/任务引用；业务事实永远以工具返回为准，勿用此缓存替代查询）。",
+        "流程边界（查询 vs 发起）：只问『能否/有没有/要不要/是不是』→ 用查询/判定工具直接作答即可；"
+        "用户要『申请/发起/执行』退货或补货（申请退货、帮我退货、发起退货、生成补货建议并执行、"
+        "确认补货等）→ **必须调用对应 workflow 工具**（退货走 cs08_return_workflow，补货走 "
+        "op05_restock_workflow），不得只用查询工具答复了事。",
         "流程：思考需要的工具→调用→基于工具结果继续→信息足够时给出最终中文回答，引用工具数值。",
     ]
     if memory:
@@ -100,6 +110,9 @@ _MEMORY_LABELS = {
     "default_horizon": "默认分析时间窗（天）",
     "response_format": "偏好输出格式",
 }
+
+# I6：Workspace Mode 用户可见中文标签（capability 提示等气泡文案）
+_MODE_LABEL = {"UNSET": "未锁定", "CUSTOMER_SERVICE": "客服", "OPERATIONS": "运营"}
 
 
 def _memory_block(session: dict) -> str:
@@ -239,6 +252,12 @@ def resolve_text_action(graph, thread_id: str, session: dict, message: str) -> t
         d = resolve_approval_text(graph, thread_id, message)
         if d:
             return session, d, False
+        # F4：无 pending 时的显式域切换兜底——用户直接说"切换到运营/客服模式"，
+        # 无需依赖模型先调 request_capability。无显式域（如"好的，切换"）则返回 None。
+        from ..context import capability_domain_switch
+        domain = capability_domain_switch(message)
+        if domain:
+            return {**session, "workspace_mode": domain}, None, True
     except Exception:
         pass
     return session, None, False
@@ -254,11 +273,14 @@ def _persist_session(session: dict, thread_id: str, status: str, message: str,
         from ..runtime.store import create_session, write_run_log
         sid = session.get("session_id", "")
         uid = int(session.get("user_id") or 1)
-        role = mode_to_role(session.get("workspace_mode"))   # run_log 用小写（审查发现 4）
+        mode = session.get("workspace_mode") or "UNSET"
         store = int(session.get("store_id") or 1)
-        create_session(sid, thread_id, uid, role, store, title=message[:20] or None)
+        # P2：session.role 存大写 workspace_mode（侧栏徽章/会话重开按模式回读）；
+        # run_log.role 保持小写（legacy 约定，审查发现 4）
+        create_session(sid, thread_id, uid, mode, store, title=message[:20] or None)
         write_run_log(
-            f"react-{int(time.time() * 1000)}-{thread_id[:8]}", sid, uid, role, store,
+            f"react-{int(time.time() * 1000)}-{thread_id[:8]}", sid, uid,
+            mode_to_role(mode), store,
             intent=(tool_names[-1] if tool_names else None), workflow=None,
             route_status=status, tool_calls=tool_names, status=status)
     except Exception:
@@ -270,6 +292,21 @@ def _last_user_content(state) -> str:
         if isinstance(m, HumanMessage):
             return m.content
     return ""
+
+
+def _round_tool_names(out, prev_msgs: list) -> list[str]:
+    """本轮实际调用的工具名（F5 观测）：对比 invoke 前后的消息，从新增消息里
+    提取 AIMessage.tool_calls 的工具名（按出现序去重）。供 run_log 记录。"""
+    msgs = out.get("messages") or []
+    prev_n = len(prev_msgs)
+    new_msgs = msgs[prev_n:] if len(msgs) >= prev_n else msgs
+    names = []
+    for m in new_msgs:
+        for tc in (getattr(m, "tool_calls", None) or []):
+            name = tc.get("name")
+            if name and name not in names:
+                names.append(name)
+    return names
 
 
 # ---- 图构建（并行新模块，legacy 不动）----
@@ -366,12 +403,25 @@ def build_react_graph(model=None, mode: str = "UNSET", checkpointer=None,
                     tool_res = {}
                 break
         if pending:
+            label = _MODE_LABEL.get(pending["domain"], pending["domain"])
             resp = {
-                "message": f"该请求需要 {pending['domain']} 能力域。[切换到{pending['domain']}模式后自动继续]",
+                "message": f"该请求需要 {label} 能力域。[切换到{label}模式后自动继续]",
                 "status": "capability_required",
                 "needs_user_input": True,
                 "approval_required": False,
                 "result": {"capability_pending": pending},
+            }
+        elif isinstance(last, AIMessage) and getattr(last, "tool_calls", None):
+            # P0/F2：熔断兜底——最后一条是未执行的工具调用，不是最终答案。
+            # 不得把其 content（可能是 "I'll check…" 半截话）当作 completed 返回。
+            # 正常路径下带 tool_calls 的 AIMessage 会进 tools 节点，不会到 finalize，
+            # 本分支只在熔断截断（单轮循环超限）时命中。
+            resp = {
+                "message": "本轮处理遇到限制，工具调用未完成，请重试或换一种问法。",
+                "status": "incomplete",
+                "needs_user_input": True,
+                "approval_required": False,
+                "result": tool_res,
             }
         elif isinstance(last, AIMessage) and last.content:
             resp = {
@@ -434,6 +484,7 @@ def run_agent_react(graph, thread_id: str, session: dict, message: str,
         persisted = {}
     working = dict(persisted.get("working") or {})
     execution = dict(persisted.get("execution") or {})
+    prev_msgs = list(persisted.get("messages") or [])   # F5：本轮消息对比基线
     saved_session = persisted.get("session") or session
     if not session.get("workspace_mode") and saved_session.get("workspace_mode"):
         session = {**session, "workspace_mode": saved_session["workspace_mode"],
@@ -443,6 +494,14 @@ def run_agent_react(graph, thread_id: str, session: dict, message: str,
     # 防 route 误判阻塞后续工具调用（文本确认/拒绝在 web/api 层已先处理）
     if resume is None and not capability_replay:
         execution["capability_pending"] = None
+
+    # P0/F1：熔断计数按"单次用户请求"计——每轮（非 resume）重置 iterations/tool_calls。
+    # 否则计数在持久化 execution 里跨轮累计，≥max_iterations 后 route 永远截断到
+    # finalize、工具不再执行（"处理完成"/"I'll check…"故障的根因）。
+    # resume 是同一轮被 interrupt 打断后的延续，保留其预算不重置。
+    if resume is None:
+        execution["iterations"] = 0
+        execution["tool_calls"] = 0
 
     token = _CURRENT_SESSION.set(session)
     try:
@@ -476,7 +535,8 @@ def run_agent_react(graph, thread_id: str, session: dict, message: str,
             "result": val,
         }
         if not capability_replay and resume is None:
-            _persist_session(session, thread_id, "approval_required", message)
+            _persist_session(session, thread_id, "approval_required", message,
+                             tool_names=_round_tool_names(out, prev_msgs))
         resp["role"] = session.get("workspace_mode") or "operations"
         resp["store_id"] = session.get("store_id", 1)
         return {"response": resp, "state": out}
@@ -486,7 +546,8 @@ def run_agent_react(graph, thread_id: str, session: dict, message: str,
     if not capability_replay and resume is None:
         if resp.get("status") == "completed":
             _extract_memory(session, message)
-        _persist_session(session, thread_id, resp.get("status", "error"), message)
+        _persist_session(session, thread_id, resp.get("status", "error"), message,
+                         tool_names=_round_tool_names(out, prev_msgs))
     resp["role"] = session.get("workspace_mode") or "operations"
     resp["store_id"] = session.get("store_id", 1)
     return {"response": resp, "state": out}

@@ -116,6 +116,7 @@ web/
 | 左侧分组 | 平铺时间倒序（V1 不分组）|
 
 > 后续演进至 [E1 详细设计](./ui-workbench-e1-v1.md)。
+> **补充（2026-09-26）**：上表「角色/门店选择=新建时锁定」已被方案 B D9/D10 取代——Workspace Mode 由 UI 显式切换，见 [agent-plan-b-react-v1.md](./agent-plan-b-react-v1.md) §3.3。
 
 ---
 

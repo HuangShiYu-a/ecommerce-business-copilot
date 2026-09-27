@@ -115,7 +115,7 @@ CREATE TABLE IF NOT EXISTS runtime.run_log (
     workflow     VARCHAR(32),
     route_status VARCHAR(32),
     tool_calls   JSONB,                         -- [{tool, args, result_summary}]
-    status       VARCHAR(16) NOT NULL,          -- completed | failed | waiting_user_input
+    status       VARCHAR(32) NOT NULL,          -- completed | failed | waiting_user_input | capability_required | approval_required | incomplete
     latency_ms   INT,
     token_usage  JSONB,                         -- {prompt, completion, total}
     error        TEXT,

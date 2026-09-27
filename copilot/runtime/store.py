@@ -26,7 +26,9 @@ def create_session(session_id: str, thread_id: str, user_id: int, role: str,
             INSERT INTO runtime.session (session_id, thread_id, user_id, role, store_id, title)
             VALUES (%s, %s, %s, %s, %s, %s)
             ON CONFLICT (session_id) DO UPDATE SET status='active', closed_at=NULL,
-                thread_id=EXCLUDED.thread_id
+                thread_id=EXCLUDED.thread_id, updated_at=now(),
+                -- I5：复用旧会话时回填标题（legacy 建的 None 标题行），新标题为空则保留原值
+                title = COALESCE(EXCLUDED.title, runtime.session.title)
         """, (session_id, thread_id, user_id, role, store_id, title))
     finally:
         conn.close()

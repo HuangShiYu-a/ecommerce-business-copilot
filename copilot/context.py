@@ -51,15 +51,21 @@ def normalize_mode(mode: str | None) -> str:
 # 能力切换的文本确认/拒绝（P1：用户打字"切换/确认"而非点按钮）
 _CAP_REJECT = ("拒绝", "不用", "算了", "取消", "不切换", "不确认", "no")
 _CAP_CONFIRM = ("确认切换", "切换", "确认", "好的", "可以", "同意", "继续", "yes", "ok")
+# 疑问句标记（F9）：含疑问词的消息不当作确认/拒绝，避免"请分析是否切换成功了"误触切换
+_QUESTION_MARKERS = ("吗", "？", "?", "是否", "为什么", "怎么")
 
 
 def capability_text_decision(message: str | None) -> str | None:
     """识别用户对能力切换的文本意图：返回 "confirm" / "reject" / None。
 
-    拒绝词优先（"不切换"含"切换"）。仅用于存在 capability_pending 时的下一轮。
+    拒绝词优先（"不切换"含"切换"）；疑问句（含 吗/？/是否/为什么/怎么）不判定，
+    防"请分析是否切换成功了"这类问句因含"切换"子串被误判为确认（F9）。
+    仅用于存在 capability_pending 时的下一轮。
     """
     msg = (message or "").strip().lower()
     if not msg:
+        return None
+    if any(k in msg for k in _QUESTION_MARKERS):
         return None
     for k in _CAP_REJECT:
         if k in msg:
@@ -67,4 +73,23 @@ def capability_text_decision(message: str | None) -> str | None:
     for k in _CAP_CONFIRM:
         if k in msg:
             return "confirm"
+    return None
+
+
+def capability_domain_switch(message: str | None) -> str | None:
+    """文本显式域切换识别（F4，无 pending 时的兜底）。
+
+    消息同时含确认意图 + 显式能力域（运营/客服）→ 返回归一化 Workspace Mode
+    （OPERATIONS/CUSTOMER_SERVICE）；否则 None（无法确定目标域，不猜测）。
+    拒绝词优先（"不用切换"等）；仅"好的/切换"无域名的消息无法确定目标，返回 None。
+    """
+    msg = (message or "").strip().lower()
+    if not msg or any(k in msg for k in _CAP_REJECT):
+        return None
+    if capability_text_decision(msg) != "confirm":
+        return None
+    if "客服" in msg or "customer_service" in msg:
+        return "CUSTOMER_SERVICE"
+    if "运营" in msg or "operations" in msg:
+        return "OPERATIONS"
     return None
