@@ -23,7 +23,8 @@
 - **Agent Runtime V2 层**（位于业务执行层之上的新增层；不推翻上述 Frozen 契约，守 R4/R5/R10）：
   - `docs/agent-runtime-v2-spec-v1.md`（Agent Runtime V2 Spec，**V1.0**：意图路由/多轮记忆/角色提示词/Context/Structured I/O/Trace/续答/路由失败处理）
   - `docs/runtime-database-addendum-v1.md`（Runtime DB Addendum，**V1.0**：`runtime` schema + session/memory/run_log + PostgresSaver）
-  - `docs/agent-evaluation-v2-v1.md`（Agent Evaluation V2，**V1.0**：Legacy 回归 + Runtime Eval 双轨）
+  - `docs/agent-evaluation-v2-v1.md`（Agent Evaluation V2，**V1.0**：Legacy 回归 + Runtime Eval 双轨）→ **SUPERSEDED**（意图路由时代；被 `docs/evaluation-plan-v1.md` 取代，其 SC/sc_runner/rag_gold 资产已并入）
+  - `docs/evaluation-plan-v1.md`（Agent 评估计划 **V1.2 Frozen**：Correctness 之上的 Effectiveness/Performance/Safety 三层，M1~M8 指标 + 三 gold 数据集 + Reproducibility Metadata；指标集冻结，仅定义修正）
 - **Data Phase**（S1 / S3 plan 为 Draft；S2 已批准为 Generator 说明书）：
   - `docs/data-requirements-v1.md`（S1 Dataset Matrix **V1.0.2**）
   - `docs/synthetic-data-design-v1.md`（S2 Synthetic Design **V1.0.5**，已批准为 Generator 说明书）
@@ -328,3 +329,5 @@ AI 必须：
 | V1.16 | 2026-09-18 | S3 实施完成（P1–P9 全过门；dev+eval 双世界 53 测试通过）；S3 实施规划升 **V1.1** 含 S4 交接边界声明 |
 | V1.17 | 2026-09-19 | 索引 **Agent Runtime V2 层**：Spec（V1.0，意图路由/多轮记忆/角色提示词/Structured I/O/Trace/续答/路由失败）+ Runtime DB Addendum（V1.0，runtime schema）+ Agent Eval V2（V1.0，双轨评测）；索引 Knowledge 增强计划（V1.0 Draft，23 篇多格式）；Database 文档表数修正 23→22 |
 | V1.18 | 2026-09-23 | **方案 B 落地**：Agent Runtime 从意图路由演进为 **ReAct 工具调用式**（`copilot/agent/react.py`：LLM 看工具目录→自主调用→确定性工具裁定，R4/R5/R10 保持）；索引实施规划 `docs/agent-plan-b-react-v1.md`（V1.5.2）；意图路由（router/registry/llm_router/orchestrator）**归档为 AGENT_BACKEND=legacy 回退（DEPRECATED）**，op05.py 退役 |
+| V1.19 | 2026-09-27 | **Agent 评估计划 V1.1 冻结**（`docs/evaluation-plan-v1.md`：Effectiveness/Performance/Safety 三层，M1~M8 + Reproducibility Metadata）；Spec-3 `agent-evaluation-v2-v1.md` **标记 SUPERSEDED**（意图路由时代，断言模型与 ReAct 不匹配；SC/sc_runner/rag_gold 资产并入新方案） |
+| V1.20 | 2026-09-27 | 评估计划 **V1.1→V1.2**（仅定义修正，指标集不变）：M4 Hit@5、Abstention 明确 Retrieval 级、M6 拆结构性/live 两源、M2/M3/M7 统一 required_facts、M5 graph build 不计 E2E、M8 coverage 公式化 |

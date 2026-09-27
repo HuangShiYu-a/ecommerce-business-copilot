@@ -1,6 +1,12 @@
 # E-commerce Business Copilot — Agent Evaluation V2（Spec-3）
 
-版本：V1.0 · 状态：定稿 · 日期：2026-09-19
+> **⚠️ SUPERSEDED（已被取代，2026-09-26）**：本文档面向**意图路由时代**的 Agent Runtime（Spec-1/2），
+> 其断言模型（`expected.intent` 12 枚举意图类）与方案 B 落地后的 **ReAct Tool-Orchestrator** 不再匹配。
+> 现行测评方案为 **`docs/evaluation-plan-v1.md`（V1.1 Frozen）**。本文档仅作历史参考；
+> 其可用资产已并入新方案：SC 26 条 + sc_runner（Correctness 层，M2 标答）、`data/eval-cases/rag_gold.yaml`（M4 种子）。
+> 规划的 routing.yaml / multi_turn.yaml / negative.yaml 语料从未实现，不再补建。
+
+版本：V1.0 · 状态：~~定稿~~ → **SUPERSEDED** · 日期：2026-09-19
 
 **文档定位**：Agent Runtime V2 的**评测层规范**。评测对象 = **Agent 行为**（意图路由 / 槽位 / 多轮 / 澄清 / 续答 / 权限 / 记忆 / Trace），区别于 S3 eval_slice（数据验收）与 sc_runner（业务正确性）。对应《Agent Runtime V2 Spec》§15 的落地细节。
 
