@@ -1,0 +1,139 @@
+# Conditional Orchestration 测试集（M3）— 全量 12 条
+#
+# schema 约定（对齐 evaluation-plan-v1.md §2.2 / §3.3，Trace Invariant 判定，非固定序列）：
+#   id               唯一标识
+#   mode             workspace_mode（M3 用例为 OPERATIONS / CUSTOMER_SERVICE）
+#   store_id         1
+#   question         用户问题
+#   pattern          conditional_multihop | early_stop | single_hop | multi_tool_parallel
+#   first_tool       第一跳工具（multi_tool_parallel 可为 null）
+#   followup_condition  HIGH | NORMAL —— 触发深挖/早停的判定（枚举实测为 HIGH/NORMAL）
+#   required_deep_tools  条件成立后至少命中一个（early_stop 为 []：不得调用深挖工具）
+#   required_tools   （multi_tool_parallel 用）必须并行调用的工具
+#   required_facts   结论正确层（{risk_level: HIGH}，与 M2/M7 同 required_facts 约定）
+#   allowed_tools    允许全集（无集外工具；缺省 = first_tool + required_deep_tools）
+#
+# 判定（§3.3）：
+#   - conditional_multihop：first_tool 命中 → condition 成立 → deep_tools 至少命中一个 → 答案含 facts
+#   - early_stop：first_tool 命中 → 未再调用深挖工具 → 正常结束 → 答案含 facts
+#   - 多跳有效性：调用数 < 熔断上限（6/12），无重复无意义循环
+# 数据口径（实测）：HIGH 侧仅 SKU_01_STOCKOUT_01；NORMAL 侧 NORMAL_01/02/03
+
+cases:
+  # ================= conditional_multihop（HIGH → 深挖）=================
+  - id: mh-001
+    mode: OPERATIONS
+    store_id: 1
+    question: "SKU_01_STOCKOUT_01 有没有缺货风险？如果有，帮我进一步分析原因"
+    pattern: conditional_multihop
+    first_tool: analyze_stockout_risk
+    followup_condition: HIGH
+    required_deep_tools: [get_inventory, analyze_sales_anomaly, calculate_product_health, query_product_performance]
+    required_facts: {risk_level: HIGH}
+
+  - id: mh-002
+    mode: OPERATIONS
+    store_id: 1
+    question: "SKU_01_STOCKOUT_01 会断货吗？如果会，帮我查一下原因"
+    pattern: conditional_multihop
+    first_tool: analyze_stockout_risk
+    followup_condition: HIGH
+    required_deep_tools: [get_inventory, analyze_sales_anomaly, calculate_product_health, query_product_performance]
+    required_facts: {risk_level: HIGH}
+
+  - id: mh-003
+    mode: OPERATIONS
+    store_id: 1
+    question: "帮我看看 SKU_01_STOCKOUT_01 缺货风险，如果高的话分析下是什么原因"
+    pattern: conditional_multihop
+    first_tool: analyze_stockout_risk
+    followup_condition: HIGH
+    required_deep_tools: [get_inventory, analyze_sales_anomaly, calculate_product_health, query_product_performance]
+    required_facts: {risk_level: HIGH}
+
+  - id: mh-004
+    mode: OPERATIONS
+    store_id: 1
+    question: "SKU_01_STOCKOUT_01 库存风险高不高？高的话继续深入分析"
+    pattern: conditional_multihop
+    first_tool: analyze_stockout_risk
+    followup_condition: HIGH
+    required_deep_tools: [get_inventory, analyze_sales_anomaly, calculate_product_health, query_product_performance]
+    required_facts: {risk_level: HIGH}
+
+  # ================= early_stop（NORMAL → 不深挖）=================
+  - id: mh-005
+    mode: OPERATIONS
+    store_id: 1
+    question: "SKU_01_NORMAL_01 有没有缺货风险？如果有，帮我分析原因"
+    pattern: early_stop
+    first_tool: analyze_stockout_risk
+    followup_condition: NORMAL
+    required_deep_tools: []
+    required_facts: {risk_level: NORMAL}
+
+  - id: mh-006
+    mode: OPERATIONS
+    store_id: 1
+    question: "SKU_01_NORMAL_02 会断货吗？如果会，帮我查原因"
+    pattern: early_stop
+    first_tool: analyze_stockout_risk
+    followup_condition: NORMAL
+    required_deep_tools: []
+    required_facts: {risk_level: NORMAL}
+
+  - id: mh-007
+    mode: OPERATIONS
+    store_id: 1
+    question: "SKU_01_NORMAL_03 缺货风险怎么样，需要深入分析吗"
+    pattern: early_stop
+    first_tool: analyze_stockout_risk
+    followup_condition: NORMAL
+    required_deep_tools: []
+    required_facts: {risk_level: NORMAL}
+
+  - id: mh-008
+    mode: OPERATIONS
+    store_id: 1
+    question: "帮我看看 SKU_01_NORMAL_01 有没有断货风险，如果有就深入分析"
+    pattern: early_stop
+    first_tool: analyze_stockout_risk
+    followup_condition: NORMAL
+    required_deep_tools: []
+    required_facts: {risk_level: NORMAL}
+
+  # ================= single_hop（单跳查询）=================
+  - id: mh-009
+    mode: OPERATIONS
+    store_id: 1
+    question: "SKU_01_NORMAL_01 库存多少"
+    pattern: single_hop
+    first_tool: get_inventory
+    required_facts: {}
+
+  - id: mh-010
+    mode: OPERATIONS
+    store_id: 1
+    question: "SKU_01_OVERSTOCK_01 库存多少"
+    pattern: single_hop
+    first_tool: get_inventory
+    required_facts: {}
+
+  # ================= multi_tool_parallel（并行多工具）=================
+  - id: mh-011
+    mode: CUSTOMER_SERVICE
+    store_id: 1
+    question: "ORD_01_000438 能退货吗，另外物流到哪了"
+    pattern: multi_tool_parallel
+    first_tool: null
+    required_tools: [check_return_eligibility, get_shipping_status]
+    required_facts: {}
+
+  - id: mh-012
+    mode: OPERATIONS
+    store_id: 1
+    question: "SKU_01_STOCKOUT_01 缺货风险怎么样，顺便看看库存"
+    pattern: multi_tool_parallel
+    first_tool: null
+    required_tools: [analyze_stockout_risk, get_inventory]
+    required_facts: {risk_level: HIGH}

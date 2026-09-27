@@ -21,7 +21,7 @@ from langgraph.checkpoint.memory import InMemorySaver
 from copilot.agent.react import build_react_graph, run_agent_react
 from copilot.runtime.store import clear_memory
 
-GOLD = yaml.safe_load((ROOT / "data" / "eval-cases" / "rag_gold.yaml").read_text(encoding="utf-8"))
+GOLD = yaml.safe_load((ROOT / "data" / "eval-cases" / "rag_gold_v1.yaml").read_text(encoding="utf-8"))  # Correctness 冻结版；M4 走 rag_gold.yaml
 
 # 黄金问答 grounding 关键词（源自 rag_gold 期望文档的关键事实）
 GOLD_KEYWORDS = {

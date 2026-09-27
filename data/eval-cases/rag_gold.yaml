@@ -1,36 +1,197 @@
-# RAG 黄金问答（R5.2，Spec-3 §5 rag_gold.yaml）
-# 每条：query + store_id + 期望命中文档（或 R5 冲突状态）
+# RAG 黄金问答（M4）— 全量 30 条
+#
+# schema 约定（对齐 evaluation-plan-v1.md §2.3 / §3.4，doc 级 acceptable_docs）：
+#   id              rg-xxx
+#   query           检索问题
+#   store_id        门店（1）
+#   answerable      true（知识库可答）/ false（域外，测拒答）
+#   acceptable_docs [黄金文档标题] —— 允许多个合法证据（doc 级；相关性按 chunk 所属 doc 判定）
+#   scope           （可选）业务上下文过滤（如 conflict 用例的 tags）
+#   expect          （可选）RULE_CONFLICT —— 单列，不进 Hit@5/MRR 分母
+#
+# 判定（§3.4）：
+#   Hit@5 = top-5 chunk 中出现 ≥1 个 acceptable document / answerable 条数
+#   MRR@10 = 首个相关 chunk 排名倒数均值
+#   Correct/False Abstention = Retrieval 级（search_knowledge 是否空证据）
+#   unanswerable 用例为「明显域外」问题（实测 bge-m3 下返回空，见阶段1 A3）
+# 分布：22 answerable + 2 RULE_CONFLICT + 6 unanswerable = 30
+
 cases:
+  # ================= answerable =================
   - id: rg-001
     query: "无理由退货窗口几天"
     store_id: 1
-    expect_doc: "七日无理由退货底线"
+    answerable: true
+    acceptable_docs: [七日无理由退货底线]
+
   - id: rg-002
     query: "耳机可以退货吗"
     store_id: 1
-    expect_doc: "店铺补充售后政策（STORE_01）"
+    answerable: true
+    acceptable_docs: [店铺补充售后政策（STORE_01）]
+
   - id: rg-003
     query: "物流时效承诺政策"
     store_id: 1
-    expect_doc: "物流时效承诺政策 v2.0（现行）"
-  - id: rg-004
-    query: "退货窗口几天"
-    store_id: 1
-    scope: {tags: ["apparel-conflict-test"]}
-    expect: "RULE_CONFLICT"
+    answerable: true
+    acceptable_docs: [物流时效承诺政策 v2.0（现行）]
+
   - id: rg-005
     query: "服装贴身衣物可以退货吗"
     store_id: 1
-    expect_doc: "例外商品/不可退类目"
+    answerable: true
+    acceptable_docs: [例外商品/不可退类目]
+
   - id: rg-006
     query: "滞销商品怎么处理"
     store_id: 1
-    expect_doc: "滞销商品处理规则"
+    answerable: true
+    acceptable_docs: [滞销商品处理规则]
+
   - id: rg-007
     query: "物流异常延误怎么办"
     store_id: 1
-    expect_doc: "物流异常处理 SOP"
+    answerable: true
+    acceptable_docs: [物流异常处理 SOP]
+
   - id: rg-008
     query: "库存怎么管理"
     store_id: 1
-    expect_doc: "库存管理政策"
+    answerable: true
+    acceptable_docs: [库存管理政策]
+
+  - id: rg-009
+    query: "退货需要什么凭证"
+    store_id: 1
+    answerable: true
+    acceptable_docs: [完好要求与凭证]
+
+  - id: rg-010
+    query: "赠品要不要一起退回"
+    store_id: 1
+    answerable: true
+    acceptable_docs: [特殊售后场景处理（赠品/套装/优惠分摊）]
+
+  - id: rg-011
+    query: "退货退款整体流程是什么"
+    store_id: 1
+    answerable: true
+    acceptable_docs: [退货退款政策总则]
+
+  - id: rg-012
+    query: "发货时效是多久"
+    store_id: 1
+    answerable: true
+    acceptable_docs: [发货时效与物流异常处理]
+
+  - id: rg-013
+    query: "安全库存和再订货点怎么定"
+    store_id: 1
+    answerable: true
+    acceptable_docs: [库存/备货文字政策]
+
+  - id: rg-014
+    query: "商品健康度包含哪些维度"
+    store_id: 1
+    answerable: true
+    acceptable_docs: [健康维度说明与类目例外]
+
+  - id: rg-015
+    query: "售后问题的一般处理流程"
+    store_id: 1
+    answerable: true
+    acceptable_docs: [售后处理 SOP]
+
+  - id: rg-016
+    query: "退款审核流程是什么"
+    store_id: 1
+    answerable: true
+    acceptable_docs: [退款审核 SOP]
+
+  - id: rg-017
+    query: "客服回复用户用什么话术"
+    store_id: 1
+    answerable: true
+    acceptable_docs: [客服话术手册]
+
+  - id: rg-018
+    query: "售后工单怎么创建和流转"
+    store_id: 1
+    answerable: true
+    acceptable_docs: [工单操作手册]
+
+  - id: rg-019
+    query: "运营巡检都检查什么"
+    store_id: 1
+    answerable: true
+    acceptable_docs: [运营巡检 SOP]
+
+  - id: rg-020
+    query: "售后质检评分标准"
+    store_id: 1
+    answerable: true
+    acceptable_docs: [售后质检培训]
+
+  - id: rg-021
+    query: "退货申请时限是多久"
+    store_id: 1
+    answerable: true
+    acceptable_docs: [七日无理由退货底线]
+
+  - id: rg-022
+    query: "电子产品退货有什么限制"
+    store_id: 1
+    answerable: true
+    acceptable_docs: [例外商品/不可退类目, 店铺补充售后政策（STORE_01）]
+
+  - id: rg-023
+    query: "耳机拆封了还能退吗"
+    store_id: 1
+    answerable: true
+    acceptable_docs: [完好要求与凭证, 例外商品/不可退类目]
+
+  # ================= RULE_CONFLICT（单列，不进 Hit@5/MRR 分母）=================
+  - id: rg-004
+    query: "退货窗口几天"
+    store_id: 1
+    answerable: true
+    scope: {tags: [apparel-conflict-test]}
+    expect: RULE_CONFLICT
+
+  - id: rg-024
+    query: "这个商品退货窗口是几天"
+    store_id: 1
+    answerable: true
+    scope: {tags: [apparel-conflict-test]}
+    expect: RULE_CONFLICT
+
+  # ================= unanswerable（域外，检索应空证据）=================
+  - id: rg-101
+    query: "平台对带货主播的抽成比例是多少"
+    store_id: 1
+    answerable: false
+
+  - id: rg-102
+    query: "节假日营销活动排期"
+    store_id: 1
+    answerable: false
+
+  - id: rg-103
+    query: "量子计算在金融风控中的应用"
+    store_id: 1
+    answerable: false
+
+  - id: rg-104
+    query: "城市地铁票价调整听证会"
+    store_id: 1
+    answerable: false
+
+  - id: rg-105
+    query: "养猫日常护理注意事项"
+    store_id: 1
+    answerable: false
+
+  - id: rg-106
+    query: "马拉松赛事报名与补给站安排"
+    store_id: 1
+    answerable: false

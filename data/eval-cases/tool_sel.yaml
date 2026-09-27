@@ -1,0 +1,451 @@
+# Tool Plan Correctness 测试集（M1）— 全量 45 条
+#
+# schema 约定（对齐 evaluation-plan-v1.md §2.1 / §3.1）：
+#   id            唯一标识
+#   mode          CUSTOMER_SERVICE / OPERATIONS / UNSET
+#   store_id      门店（1）
+#   question      用户问题
+#   plan_type     single_tool | multi_tool | knowledge_qa | workflow_request
+#                 | capability | clarify | no_tool
+#   acceptable_plan 期望计划（可接受集，允许多合法路径）：
+#     type        = plan_type
+#     required_tools  必须调用（C ∩ required ≠ ∅）——多值 = 任一命中即可（多合法路径）
+#     allowed_tools   允许全集（C ⊆ allowed，无集外工具；缺省 = required_tools）
+#     required_args   对命中工具须带的参数键值（case-level 判定）
+#     domain          仅 capability：期望请求切换的域
+#
+# 判定（§3.1）：
+#   - 计划对 = required_tools 命中 且 无集外工具（C ⊆ allowed_tools）
+#   - capability = 调用了 request_capability(domain) 且未越权调业务工具
+#   - clarify = 无工具调用且返回需用户补充；no_tool = 无工具调用且正常回答
+#   - Precision/Recall 仅 tool-bearing cases；clarify/no_tool 标 N/A
+# 分布：12 单 + 4 知识 + 4 workflow + 8 多 + 5 clarify + 5 no_tool + 4 capability + 3 边界
+# 实体均来自 DB 实测（order_no/sku_code 存在）
+
+cases:
+  # ================= single_tool =================
+  - id: ts-001
+    mode: CUSTOMER_SERVICE
+    store_id: 1
+    question: "ORD_01_000002 物流到哪了"
+    plan_type: single_tool
+    acceptable_plan:
+      type: single_tool
+      required_tools: [get_shipping_status]
+      required_args: {order_no: ORD_01_000002}
+
+  - id: ts-002
+    mode: CUSTOMER_SERVICE
+    store_id: 1
+    question: "SKU_01_STOCKOUT_01 库存还剩多少"
+    plan_type: single_tool
+    acceptable_plan:
+      type: single_tool
+      required_tools: [get_inventory]
+      required_args: {sku_code: SKU_01_STOCKOUT_01}
+
+  - id: ts-003
+    mode: CUSTOMER_SERVICE
+    store_id: 1
+    question: "查一下 ORD_01_000001 的订单详情"
+    plan_type: single_tool
+    acceptable_plan:
+      type: single_tool
+      required_tools: [get_order]
+      required_args: {order_no: ORD_01_000001}
+
+  - id: ts-004
+    mode: CUSTOMER_SERVICE
+    store_id: 1
+    question: "SKU_01_NORMAL_01 库存够吗"
+    plan_type: single_tool
+    acceptable_plan:
+      type: single_tool
+      required_tools: [get_inventory]
+      required_args: {sku_code: SKU_01_NORMAL_01}
+
+  - id: ts-005
+    mode: CUSTOMER_SERVICE
+    store_id: 1
+    question: "ORD_01_000438 可以退货吗"
+    plan_type: single_tool
+    acceptable_plan:
+      type: single_tool
+      required_tools: [check_return_eligibility]
+      required_args: {order_no: ORD_01_000438}
+
+  - id: ts-006
+    mode: CUSTOMER_SERVICE
+    store_id: 1
+    question: "ORD_01_000427 还能退吗"
+    plan_type: single_tool
+    acceptable_plan:
+      type: single_tool
+      required_tools: [check_return_eligibility]
+      required_args: {order_no: ORD_01_000427}
+
+  - id: ts-007
+    mode: CUSTOMER_SERVICE
+    store_id: 1
+    question: "ORD_01_000005 有没有延误"
+    plan_type: single_tool
+    acceptable_plan:
+      type: single_tool
+      required_tools: [analyze_fulfillment_delay]
+      required_args: {order_no: ORD_01_000005}
+
+  - id: ts-008
+    mode: OPERATIONS
+    store_id: 1
+    question: "SKU_01_STOCKOUT_01 缺货风险高吗"
+    plan_type: single_tool
+    acceptable_plan:
+      type: single_tool
+      required_tools: [analyze_stockout_risk]
+      required_args: {sku_code: SKU_01_STOCKOUT_01}
+
+  - id: ts-009
+    mode: OPERATIONS
+    store_id: 1
+    question: "SKU_01_ANOMALY_DROP_01 销售有没有异常"
+    plan_type: single_tool
+    acceptable_plan:
+      type: single_tool
+      required_tools: [analyze_sales_anomaly]
+      required_args: {sku_code: SKU_01_ANOMALY_DROP_01}
+
+  - id: ts-010
+    mode: OPERATIONS
+    store_id: 1
+    question: "SKU_01_HEALTH_FULL_01 健康度怎么样"
+    plan_type: single_tool
+    acceptable_plan:
+      type: single_tool
+      required_tools: [calculate_product_health]
+      required_args: {sku_code: SKU_01_HEALTH_FULL_01}
+
+  - id: ts-011
+    mode: OPERATIONS
+    store_id: 1
+    question: "SKU_01_SLOW_01 是不是慢销商品"
+    plan_type: single_tool
+    acceptable_plan:
+      type: single_tool
+      required_tools: [query_product_performance]
+      required_args: {sku_code: SKU_01_SLOW_01}
+
+  - id: ts-012
+    mode: CUSTOMER_SERVICE
+    store_id: 1
+    question: "ORD_01_000008 发货了吗"
+    plan_type: single_tool
+    acceptable_plan:
+      type: single_tool
+      required_tools: [get_shipping_status]
+      required_args: {order_no: ORD_01_000008}
+
+  # ================= knowledge_qa（RAG）=================
+  - id: ts-013
+    mode: CUSTOMER_SERVICE
+    store_id: 1
+    question: "无理由退货窗口几天"
+    plan_type: knowledge_qa
+    acceptable_plan:
+      type: knowledge_qa
+      required_tools: [search_business_knowledge]
+
+  - id: ts-014
+    mode: CUSTOMER_SERVICE
+    store_id: 1
+    question: "耳机可以退货吗"
+    plan_type: knowledge_qa
+    acceptable_plan:
+      type: knowledge_qa
+      required_tools: [search_business_knowledge]
+
+  - id: ts-015
+    mode: CUSTOMER_SERVICE
+    store_id: 1
+    question: "退货需要什么凭证"
+    plan_type: knowledge_qa
+    acceptable_plan:
+      type: knowledge_qa
+      required_tools: [search_business_knowledge]
+
+  - id: ts-016
+    mode: CUSTOMER_SERVICE
+    store_id: 1
+    question: "物流时效承诺是多久"
+    plan_type: knowledge_qa
+    acceptable_plan:
+      type: knowledge_qa
+      required_tools: [search_business_knowledge]
+
+  # ================= workflow_request（发起，非查询）=================
+  - id: ts-017
+    mode: CUSTOMER_SERVICE
+    store_id: 1
+    question: "ORD_01_000438 申请退货"
+    plan_type: workflow_request
+    acceptable_plan:
+      type: workflow_request
+      required_tools: [cs08_return_workflow]
+      required_args: {order_no: ORD_01_000438}
+
+  - id: ts-018
+    mode: OPERATIONS
+    store_id: 1
+    question: "SKU_01_STOCKOUT_01 需要补货吗"
+    plan_type: workflow_request
+    acceptable_plan:
+      type: workflow_request
+      required_tools: [op05_restock_workflow]
+      required_args: {sku_code: SKU_01_STOCKOUT_01}
+
+  - id: ts-019
+    mode: CUSTOMER_SERVICE
+    store_id: 1
+    question: "帮我办理 ORD_01_000438 的退货"
+    plan_type: workflow_request
+    acceptable_plan:
+      type: workflow_request
+      required_tools: [cs08_return_workflow]
+      required_args: {order_no: ORD_01_000438}
+
+  - id: ts-020
+    mode: OPERATIONS
+    store_id: 1
+    question: "SKU_01_NORMAL_03 确认补货"
+    plan_type: workflow_request
+    acceptable_plan:
+      type: workflow_request
+      required_tools: [op05_restock_workflow]
+      required_args: {sku_code: SKU_01_NORMAL_03}
+
+  # ================= multi_tool（并行多工具）=================
+  - id: ts-021
+    mode: CUSTOMER_SERVICE
+    store_id: 1
+    question: "ORD_01_000438 能退货吗，另外物流到哪了"
+    plan_type: multi_tool
+    acceptable_plan:
+      type: multi_tool
+      required_tools: [check_return_eligibility, get_shipping_status]
+      required_args: {order_no: ORD_01_000438}
+
+  - id: ts-022
+    mode: OPERATIONS
+    store_id: 1
+    question: "SKU_01_STOCKOUT_01 缺货风险高吗，顺便看看库存"
+    plan_type: multi_tool
+    acceptable_plan:
+      type: multi_tool
+      required_tools: [analyze_stockout_risk, get_inventory]
+
+  - id: ts-023
+    mode: CUSTOMER_SERVICE
+    store_id: 1
+    question: "ORD_01_000002 物流到哪了，有没有延误"
+    plan_type: multi_tool
+    acceptable_plan:
+      type: multi_tool
+      required_tools: [get_shipping_status, analyze_fulfillment_delay]
+
+  - id: ts-024
+    mode: CUSTOMER_SERVICE
+    store_id: 1
+    question: "ORD_01_000438 能退货吗，退货政策是什么"
+    plan_type: multi_tool
+    acceptable_plan:
+      type: multi_tool
+      required_tools: [check_return_eligibility, search_business_knowledge]
+
+  - id: ts-025
+    mode: OPERATIONS
+    store_id: 1
+    question: "SKU_01_ANOMALY_DROP_01 销售异常吗，健康度怎么样"
+    plan_type: multi_tool
+    acceptable_plan:
+      type: multi_tool
+      required_tools: [analyze_sales_anomaly, calculate_product_health]
+
+  - id: ts-026
+    mode: OPERATIONS
+    store_id: 1
+    question: "SKU_01_STOCKOUT_01 库存多少，缺货风险怎么样"
+    plan_type: multi_tool
+    acceptable_plan:
+      type: multi_tool
+      required_tools: [get_inventory, analyze_stockout_risk]
+
+  - id: ts-027
+    mode: CUSTOMER_SERVICE
+    store_id: 1
+    question: "ORD_01_000427 能不能退，物流到哪了"
+    plan_type: multi_tool
+    acceptable_plan:
+      type: multi_tool
+      required_tools: [check_return_eligibility, get_shipping_status]
+
+  - id: ts-028
+    mode: OPERATIONS
+    store_id: 1
+    question: "SKU_01_SLOW_01 是不是慢销，健康度如何"
+    plan_type: multi_tool
+    acceptable_plan:
+      type: multi_tool
+      required_tools: [query_product_performance, calculate_product_health]
+
+  # ================= clarify（缺槽反问，不编造）=================
+  - id: ts-029
+    mode: CUSTOMER_SERVICE
+    store_id: 1
+    question: "帮我查一下物流"
+    plan_type: clarify
+    acceptable_plan:
+      type: clarify
+
+  - id: ts-030
+    mode: CUSTOMER_SERVICE
+    store_id: 1
+    question: "这个订单能退吗"
+    plan_type: clarify
+    acceptable_plan:
+      type: clarify
+
+  - id: ts-031
+    mode: CUSTOMER_SERVICE
+    store_id: 1
+    question: "查一下库存"
+    plan_type: clarify
+    acceptable_plan:
+      type: clarify
+
+  - id: ts-032
+    mode: OPERATIONS
+    store_id: 1
+    question: "帮我看看销售情况"
+    plan_type: clarify
+    acceptable_plan:
+      type: clarify
+
+  - id: ts-033
+    mode: OPERATIONS
+    store_id: 1
+    question: "补货需要吗"
+    plan_type: clarify
+    acceptable_plan:
+      type: clarify
+
+  # ================= no_tool（闲聊 / 域外）=================
+  - id: ts-034
+    mode: CUSTOMER_SERVICE
+    store_id: 1
+    question: "你好"
+    plan_type: no_tool
+    acceptable_plan:
+      type: no_tool
+
+  - id: ts-035
+    mode: CUSTOMER_SERVICE
+    store_id: 1
+    question: "谢谢"
+    plan_type: no_tool
+    acceptable_plan:
+      type: no_tool
+
+  - id: ts-036
+    mode: CUSTOMER_SERVICE
+    store_id: 1
+    question: "你是谁"
+    plan_type: no_tool
+    acceptable_plan:
+      type: no_tool
+
+  - id: ts-037
+    mode: CUSTOMER_SERVICE
+    store_id: 1
+    question: "今天天气怎么样"
+    plan_type: no_tool
+    acceptable_plan:
+      type: no_tool
+
+  - id: ts-038
+    mode: CUSTOMER_SERVICE
+    store_id: 1
+    question: "帮我写一首诗"
+    plan_type: no_tool
+    acceptable_plan:
+      type: no_tool
+
+  # ================= capability（UNSET 下请求扩域）=================
+  - id: ts-039
+    mode: UNSET
+    store_id: 1
+    question: "SKU_01_STOCKOUT_01 缺货风险怎么样"
+    plan_type: capability
+    acceptable_plan:
+      type: capability
+      domain: operations
+
+  - id: ts-040
+    mode: UNSET
+    store_id: 1
+    question: "SKU_01_ANOMALY_DROP_01 销售异常吗"
+    plan_type: capability
+    acceptable_plan:
+      type: capability
+      domain: operations
+
+  - id: ts-041
+    mode: UNSET
+    store_id: 1
+    question: "SKU_01_SLOW_01 是不是慢销"
+    plan_type: capability
+    acceptable_plan:
+      type: capability
+      domain: operations
+
+  - id: ts-042
+    mode: UNSET
+    store_id: 1
+    question: "ORD_01_000438 申请退货"
+    plan_type: capability
+    acceptable_plan:
+      type: capability
+      domain: customer_service
+
+  # ================= boundary（多合法路径）=================
+  # required_tools 多值 = 任一命中即可（合法替代路径）
+  - id: ts-043
+    mode: CUSTOMER_SERVICE
+    store_id: 1
+    question: "ORD_01_000438 能退吗"
+    plan_type: boundary
+    acceptable_plan:
+      type: boundary
+      required_tools: [check_return_eligibility, cs08_return_workflow]
+      allowed_tools: [check_return_eligibility, cs08_return_workflow]
+      required_args: {order_no: ORD_01_000438}
+
+  - id: ts-044
+    mode: OPERATIONS
+    store_id: 1
+    question: "SKU_01_STOCKOUT_01 要不要补货"
+    plan_type: boundary
+    acceptable_plan:
+      type: boundary
+      required_tools: [analyze_stockout_risk, op05_restock_workflow]
+      allowed_tools: [analyze_stockout_risk, op05_restock_workflow]
+      required_args: {sku_code: SKU_01_STOCKOUT_01}
+
+  - id: ts-045
+    mode: CUSTOMER_SERVICE
+    store_id: 1
+    question: "ORD_01_000002 物流有没有问题"
+    plan_type: boundary
+    acceptable_plan:
+      type: boundary
+      required_tools: [get_shipping_status, analyze_fulfillment_delay]
+      allowed_tools: [get_shipping_status, analyze_fulfillment_delay]
+      required_args: {order_no: ORD_01_000002}

@@ -53,6 +53,12 @@ P1     nDCG / Dense-vs-Hybrid / LLM-as-judge / 复杂 Reranker / 复杂负载   
 > **共享字段约定（不统一文件结构）**：各数据集只共享字段**思想**——`acceptable_*`（允许集，不绑定唯一路径）、
 > `required_facts` / `forbidden_facts`（结论判定，M2/M3/M7 统一）、`metadata.version`（数据集版本）。
 > `scenarios.yaml` 是已冻结的 SC 资产（不重塑），仅作为 M2 标答来源。
+>
+> **共享数据迁移纪律（V1.2.2）**：`data/eval-cases/` 与 `data/scenarios/` 下的文件可能被多个消费者读取
+> （Correctness 测试 / eval 脚本 / 评测 harness）。改造此类共享文件时，**同一提交内**必须：
+> ① grep 枚举所有读者；② 更新或隔离每个读者；③ 重跑受影响测试；④ 记录修订。
+> 已隔离：`rag_gold.yaml`（新 30 条，**M4 专用**）与 `rag_gold_v1.yaml`（旧 8 条，**Correctness 冻结副本**，
+> 供 `test_rag_gold_all_hit` / `eval_g5.py` 读取）——**两者不得互相改写**。
 
 ### 2.1 TS-Set：工具选择与参数（新建，~45 条）
 
@@ -103,7 +109,9 @@ P1     nDCG / Dense-vs-Hybrid / LLM-as-judge / 复杂 Reranker / 复杂负载   
 
 ### 2.3 RAG-Set：检索评测（扩 8 → ~30 条）
 
-文件：`data/eval-cases/rag_gold.yaml`
+文件：`data/eval-cases/rag_gold.yaml`（**M4 专用**，30 条新 schema）
+> Correctness 层黄金问答使用冻结副本 `data/eval-cases/rag_gold_v1.yaml`（旧 expect_doc 格式，
+> 供 `test_rag_gold_all_hit` / `eval_g5.py` 读取）。两者解耦，**不得互相改写**（V1.2.2）。
 
 ```yaml
 - id: rg-001
@@ -328,3 +336,4 @@ README 分四层展示：Correctness（160 tests）/ Effectiveness（M1~M4, M7�
 | V1.1 | 2026-09-26 | **冻结**。两轮外部审查 + 代码核对后：新增 M6 Safety（越权三层/审批绕过/缺槽臆造）、M7 Grounded Answer（gold-facts）、M8 Legacy vs ReAct Baseline；M1 gold 支持 no_tool/clarify；M2 补 Final Answer Fidelity 四层；M4 拆 Correct/False Abstention、doc 级 acceptable_docs；M5 加 warm-up/N/pooled/Pre-Post HITL；补 Reproducibility Metadata；nDCG/Hybrid/Judge 明确降 P1 |
 | V1.2 | 2026-09-27 | **仅定义修正，指标集不变**。M4 Recall@5→Hit@5、Abstention 明确 Retrieval 级（Answer 级归 M7/M2）；M1 no_tool/clarify 的 Precision/Recall 标 N/A；M6 拆结构性 fake 测试 + live 行为测试两源（防 Block/Execution 0/0）；M2 补 forbidden_facts；M2/M3/M7 统一 required_facts；M5 graph build 不计 E2E（warm/cached graph）；M8 coverage 公式显式化 + 结构性不支持标 N/A 不标 0% + 非严格因果表述纪律；M7 Citation 改名 Citation Retrieval Support；Metadata 补 embedding_model/retrieval_config_version；各数据集只共享字段约定不统一文件结构 |
 | V1.2.1 | 2026-09-27 | 数据实测口径修正（非定义变更）：M3 风险枚举为 **HIGH/NORMAL**（原文 LOW 系笔误）；HIGH 侧实测仅 1 个 SKU（`SKU_01_STOCKOUT_01`；ANOMALY_DROP=NORMAL、SLOW/OVERSTOCK 对缺货风险 DATA_UNAVAILABLE）；§7 风险行同步 |
+| V1.2.2 | 2026-09-27 | **共享数据解耦（方案 A）**：`rag_gold.yaml` 改为 **M4 专用**（30 条新 schema，answerable/acceptable_docs）；恢复旧 8 条为 `rag_gold_v1.yaml`（**Correctness 冻结副本**，供 `test_rag_gold_all_hit` / `eval_g5.py` 读取，`expect_doc` 格式）；补「共享数据迁移纪律」（改共享文件须同一提交内枚举/隔离读者 + 重跑测试 + 记修订）；修复因转换共享文件导致的 Correctness 层 `test_rag_gold_all_hit` 回归（KeyError: expect_doc） |

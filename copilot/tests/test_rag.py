@@ -77,13 +77,17 @@ def test_resolve_normal_no_conflict():
 
 
 def test_rag_gold_all_hit():
-    """黄金问答全量：expect_doc 命中 / expect 状态匹配。"""
+    """黄金问答全量（冻结版 rag_gold_v1）：expect_doc 命中 / expect 状态匹配。
+
+    rag_gold_v1.yaml 为 Correctness 冻结副本（旧 expect_doc 格式）；M4 评测数据
+    走 data/eval-cases/rag_gold.yaml（新 schema），与本测试解耦。
+    """
     from pathlib import Path
     import yaml
     from copilot.rag import resolve_rules
 
     gold_path = (Path(__file__).resolve().parent.parent.parent / "data" / "eval-cases"
-                 / "rag_gold.yaml")
+                 / "rag_gold_v1.yaml")
     gold = yaml.safe_load(gold_path.read_text(encoding="utf-8"))
     with connect() as conn:
         for case in gold["cases"]:
