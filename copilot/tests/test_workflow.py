@@ -67,18 +67,18 @@ def test_cs08_eligible_approval_and_idempotent():
     assert result.get("return_request_id"), result
     first_id = result["return_request_id"]
     assert _audit_count(first_id) >= 1, "audit_logs 应有 CREATE_RETURN_REQUEST 记录"
-    # 幂等重放：另一 thread 同订单 → 返回原单
+    # H1 重放：另一 thread 同订单 → 已有退货单，不再触发审批/建单（返回 already_exists）
     fake2 = _fake(
         AIMessage(content="", tool_calls=[tool_call("cs08_return_workflow",
                                                     {"order_no": "ORD_01_000438"})]),
         AIMessage(content="完成"),
     )
     g2 = build_react_graph(model=fake2, mode="CUSTOMER_SERVICE")
-    run_agent_react(g2, "t2", sess, "ORD_01_000438 申请退货")
-    out3 = run_agent_react(g2, "t2", sess, "", resume={"decision": "approved"})
-    r3 = out3["response"]["result"]
-    assert r3.get("return_request_id") == first_id, r3       # 同单
-    assert r3.get("idempotent") is True, r3                  # 幂等标记
+    out3 = run_agent_react(g2, "t2", sess, "ORD_01_000438 申请退货")
+    r3 = out3["response"]
+    assert r3["status"] == "completed", r3
+    assert r3["approval_required"] is False, r3
+    assert (r3.get("result") or {}).get("status") == "already_exists", r3["result"]
 
 
 def test_cs08_ineligible_no_interrupt():

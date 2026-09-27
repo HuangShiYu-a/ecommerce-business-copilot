@@ -190,6 +190,13 @@ def _cs08(ctx, order_no: str) -> WorkflowResult:
     from ..tool import run_tool as _rt
     res = _rt("T-A-09", ctx, order_no=order_no)
     if res.ok:
+        # H1：已有成功退货单 → 不再触发 N6 确认/建单（与 ReAct 版短路对齐）
+        if res.data.get("existing_return"):
+            return WorkflowResult(
+                formal_result={**res.data, "status": "already_exists"},
+                route_status="already_exists", status="completed",
+                confirmation_required=False,
+            )
         decision = res.data.get("decision", "undetermined")
         return WorkflowResult(
             formal_result=res.data, route_status=decision, status="completed",

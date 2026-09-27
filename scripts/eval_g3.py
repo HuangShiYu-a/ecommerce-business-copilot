@@ -35,7 +35,16 @@ def main() -> int:
     sess_cs = {"session_id": "g3", "user_id": 1, "workspace_mode": "CUSTOMER_SERVICE", "store_id": 1}
     sess_ops = {"session_id": "g3", "user_id": 1, "workspace_mode": "OPERATIONS", "store_id": 1}
 
-    # ---- 1) 退货建单（eligible → 挂起 → 确认 → 建单 + 审计 + 幂等重放）----
+    # ---- 1) 拒绝路径（cancelled；前置：438 尚无退货单，可触发 interrupt）----
+    g_cs4 = build_react_graph(model=None, mode="CUSTOMER_SERVICE", checkpointer=InMemorySaver())
+    run_agent_react(g_cs4, "R5", sess_cs, "ORD_01_000438 申请退货")
+    out7 = run_agent_react(g_cs4, "R5", sess_cs, "", resume={"decision": "rejected"})
+    r7 = out7["response"]
+    cancelled = (r7.get("result") or {}).get("decision") == "cancelled"
+    results["拒绝路径"] = r7["status"] == "completed" and cancelled
+    print(f"[{'PASS' if results['拒绝路径'] else 'FAIL'}] 拒绝路径 cancelled={cancelled}")
+
+    # ---- 2) 退货建单（eligible → 挂起 → 确认 → 建单 + 审计 + 重放不重复）----
     g_cs = build_react_graph(model=None, mode="CUSTOMER_SERVICE", checkpointer=InMemorySaver())
     out1 = run_agent_react(g_cs, "R1", sess_cs, "ORD_01_000438 申请退货")
     r1 = out1["response"]
@@ -49,16 +58,17 @@ def main() -> int:
         rid = res.get("return_request_id")
         ok1 = r2["status"] == "completed" and rid is not None
         ok2 = audit_count(rid) >= 1 if rid else False
-        # 幂等重放：新 thread 同订单
+        # H1 重放：新 thread 同订单 → 已有退货单，不再触发审批/建单（返回 already_exists）
         g_cs2 = build_react_graph(model=None, mode="CUSTOMER_SERVICE", checkpointer=InMemorySaver())
-        run_agent_react(g_cs2, "R2", sess_cs, "ORD_01_000438 申请退货")
-        out3 = run_agent_react(g_cs2, "R2", sess_cs, "", resume={"decision": "approved"})
-        r3 = out3["response"].get("result") or {}
-        ok3 = r3.get("return_request_id") == rid and r3.get("idempotent") is True
+        out3 = run_agent_react(g_cs2, "R2", sess_cs, "ORD_01_000438 申请退货")
+        r3 = out3["response"]
+        ok3 = (r3["status"] == "completed"
+               and r3.get("approval_required") is False
+               and (r3.get("result") or {}).get("status") == "already_exists")
         results["退货建单"] = ok1 and ok2 and ok3
-        print(f"[{'PASS' if results['退货建单'] else 'FAIL'}] 退货建单 建单={ok1} 审计={ok2} 幂等={ok3} request_id={rid}")
+        print(f"[{'PASS' if results['退货建单'] else 'FAIL'}] 退货建单 建单={ok1} 审计={ok2} 重放不重复={ok3} request_id={rid}")
 
-    # ---- 2) ineligible 不触发 interrupt ----
+    # ---- 3) ineligible 不触发 interrupt ----
     g_cs3 = build_react_graph(model=None, mode="CUSTOMER_SERVICE", checkpointer=InMemorySaver())
     out4 = run_agent_react(g_cs3, "R3", sess_cs, "ORD_01_000427 申请退货")
     r4 = out4["response"]
@@ -68,7 +78,7 @@ def main() -> int:
     print(f"[{'PASS' if results['ineligible不中断'] else 'FAIL'}] ineligible不中断 status={r4['status']} 应答含窗口/不能退={answered}")
     print(f"        answer: {r4['message'][:110]!r}")
 
-    # ---- 3) 补货确认（HAS_RECO → 挂起 → 确认 → confirmed，不写业务表）----
+    # ---- 4) 补货确认（HAS_RECO → 挂起 → 确认 → confirmed，不写业务表）----
     g_ops = build_react_graph(model=None, mode="OPERATIONS", checkpointer=InMemorySaver())
     out5 = run_agent_react(g_ops, "R4", sess_ops, "SKU_01_STOCKOUT_01 需要补货吗")
     r5 = out5["response"]
@@ -81,15 +91,6 @@ def main() -> int:
         conf = (r6.get("result") or {}).get("status") == "confirmed"
         results["补货确认"] = r6["status"] == "completed" and conf
         print(f"[{'PASS' if results['补货确认'] else 'FAIL'}] 补货确认 confirmed={conf}")
-
-    # ---- 4) 拒绝路径（cancelled）----
-    g_cs4 = build_react_graph(model=None, mode="CUSTOMER_SERVICE", checkpointer=InMemorySaver())
-    run_agent_react(g_cs4, "R5", sess_cs, "ORD_01_000438 申请退货")
-    out7 = run_agent_react(g_cs4, "R5", sess_cs, "", resume={"decision": "rejected"})
-    r7 = out7["response"]
-    cancelled = (r7.get("result") or {}).get("decision") == "cancelled"
-    results["拒绝路径"] = r7["status"] == "completed" and cancelled
-    print(f"[{'PASS' if results['拒绝路径'] else 'FAIL'}] 拒绝路径 cancelled={cancelled}")
 
     ok = all(results.values())
     print(f"\n结果: {sum(results.values())}/4")

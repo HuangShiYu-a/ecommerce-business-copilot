@@ -93,3 +93,29 @@ def capability_domain_switch(message: str | None) -> str | None:
     if "运营" in msg or "operations" in msg:
         return "OPERATIONS"
     return None
+
+
+# 审批确认/拒绝的文本判定（H4）：与 capability_text_decision 同一范式。
+# 拒绝词优先（"不同意"含"同意"），疑问句不判定，防否定句被误判为同意。
+_APPROVAL_REJECT = ("拒绝", "取消", "不同意", "不确认", "不用")
+_APPROVAL_ACCEPT = ("确认", "同意", "可以", "好的")
+
+
+def approval_text_decision(message: str | None) -> str | None:
+    """审批文本意图：返回 "approved" / "rejected" / None。
+
+    疑问句（含 吗/？/是否/为什么/怎么）不判定；拒绝词优先于接受词（"不同意"含
+    "同意"须先判拒绝）。用户打字而非点按钮时的审批确认/拒绝路径（P1/H4）。
+    """
+    msg = (message or "").strip().lower()
+    if not msg:
+        return None
+    if any(k in msg for k in _QUESTION_MARKERS):
+        return None
+    for k in _APPROVAL_REJECT:
+        if k in msg:
+            return "rejected"
+    for k in _APPROVAL_ACCEPT:
+        if k in msg:
+            return "approved"
+    return None

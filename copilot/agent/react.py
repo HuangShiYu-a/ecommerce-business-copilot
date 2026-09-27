@@ -25,7 +25,7 @@ from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.graph import END, START, StateGraph, add_messages
 
 from .. import llm
-from ..context import mode_to_role, session_ctx
+from ..context import approval_text_decision, mode_to_role, session_ctx
 from .persona import get_persona
 from .toolkit import build_toolkit, catalog_names
 
@@ -206,14 +206,13 @@ def read_capability_pending(graph, thread_id: str) -> dict | None:
 
 # 审批 workflow 工具（用于识别挂起的审批 interrupt）
 _APPROVAL_WORKFLOW_TOOLS = {"cs08_return_workflow", "op05_restock_workflow"}
-_APPROVAL_ACCEPT = ("确认", "同意")
-_APPROVAL_REJECT = ("拒绝", "取消")
 
 
 def resolve_approval_text(graph, thread_id: str, message: str) -> dict | None:
     """审批文本确认（P1）：末尾悬空 workflow tool_call + 确认/拒绝 → resume 决策。
 
     返回 {"decision": "approved"|"rejected"} 或 None。用户打字而非点按钮时的路径。
+    文本判定复用 context.approval_text_decision（H4：疑问守卫 + 拒绝词优先）。
     """
     if not (message or "").strip():
         return None
@@ -224,11 +223,9 @@ def resolve_approval_text(graph, thread_id: str, message: str) -> dict | None:
         if getattr(last, "type", "") == "ai" and getattr(last, "tool_calls", None):
             names = {tc.get("name") for tc in last.tool_calls}
             if names & _APPROVAL_WORKFLOW_TOOLS:
-                msg = message.strip().lower()
-                if any(k in msg for k in _APPROVAL_ACCEPT):
-                    return {"decision": "approved"}
-                if any(k in msg for k in _APPROVAL_REJECT):
-                    return {"decision": "rejected"}
+                d = approval_text_decision(message)
+                if d:
+                    return {"decision": d}
     except Exception:
         pass
     return None

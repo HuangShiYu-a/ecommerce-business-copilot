@@ -190,6 +190,13 @@ def make_cs08_workflow_tool(ctx_provider: Callable[[], UserContext]) -> Structur
             if not res.ok:
                 return {"error_code": res.error_code, "error_detail": res.error_detail}
             data = res.data
+            # H1：已有成功退货单（APPROVED/COMPLETED/PROCESSING）→ 不再触发审批/建单，
+            # 直接返回原单信息（幂等/防重复短路；资格判定结果不变，仅工作流层拦截）。
+            existing = data.get("existing_return")
+            if existing:
+                return {**data, "status": "already_exists",
+                        "message": f"订单 {order_no} 已有退货申请（{existing.get('request_no')}），"
+                                   "不再重复创建"}
             if data.get("decision") != "eligible":
                 # 不可退/未决 → 不触发 interrupt，直接返回（R5）
                 return {"decision": data.get("decision"),

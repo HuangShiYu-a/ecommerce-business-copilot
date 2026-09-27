@@ -79,7 +79,8 @@ def handle_pending(state: AgentRuntimeState) -> dict:
     task = dict(state.get("task", {}))
     message = state.get("message", "")
     if task.get("pending_type") == "confirm":
-        accepted = any(k in message for k in ("确认", "同意", "可以", "好的"))
+        from ..context import approval_text_decision
+        accepted = approval_text_decision(message) == "approved"   # H4：否定优先/疑问守卫
         task["status"] = COMPLETED if accepted else TERMINATED
         task["current_step"] = "confirm"
         msg = "已确认，补货建议生效。" if accepted else "已取消该操作。"
@@ -524,6 +525,8 @@ def _draft_workflow_tpl(wr: dict) -> str:
     if route == "FORBIDDEN":
         detail = fr.get("error_detail", "跨店数据被隔离")
         return f"无权访问：{detail}" if detail.endswith("。") else f"无权访问：{detail}。"
+    if route == "already_exists":
+        return "该订单已有退货申请，无需重复提交。"
     if route in ("eligible", "ineligible", "undetermined"):
         reason = fr.get("reason_code", route)
         return (f"退货资格判定：{route}（{reason}）。{fr.get('explanation', '')}"

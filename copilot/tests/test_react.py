@@ -162,6 +162,80 @@ def test_resolve_text_approval_confirm_reject():
     assert r3 is None
 
 
+# ---- H4：审批文本判定——否定优先 + 疑问守卫，防「不同意」误判为同意 ----
+
+def test_approval_text_decision_negation_and_question():
+    from copilot.context import approval_text_decision
+    # 接受词（原判定保留）
+    assert approval_text_decision("确认") == "approved"
+    assert approval_text_decision("同意") == "approved"
+    assert approval_text_decision("可以") == "approved"
+    assert approval_text_decision("好的") == "approved"
+    # 否定词优先（修复点：旧逻辑会把「不同意」误判为同意）
+    assert approval_text_decision("不同意") == "rejected"
+    assert approval_text_decision("不确认") == "rejected"
+    assert approval_text_decision("取消") == "rejected"
+    assert approval_text_decision("不用了") == "rejected"
+    # 疑问句不判定
+    assert approval_text_decision("要确认吗？") is None
+    assert approval_text_decision("是否确认") is None
+    assert approval_text_decision("为什么不同意") is None
+    # 无匹配 / 空
+    assert approval_text_decision("随便看看") is None
+    assert approval_text_decision("") is None
+    assert approval_text_decision(None) is None
+
+
+def test_resolve_text_approval_negation_rejected():
+    """H4 集成：审批挂起时打字「不同意」→ 判 rejected（不得误判为 approved）。"""
+    from copilot.agent.react import build_react_graph, resolve_text_action
+    fake = _fake(AIMessage(content="", tool_calls=[
+        tool_call("cs08_return_workflow", {"order_no": "ORD_01_000438"})]),
+        AIMessage(content="完成"))
+    g = build_react_graph(model=fake, mode="CUSTOMER_SERVICE")
+    sess = _session("CUSTOMER_SERVICE", "sa_neg")
+    run_agent_react(g, "ta_neg", sess, "ORD_01_000438 申请退货")    # interrupt → approval_required
+    _, r, _ = resolve_text_action(g, "ta_neg", sess, "不同意")
+    assert r == {"decision": "rejected"}, r
+    _, r2, _ = resolve_text_action(g, "ta_neg", sess, "好的，同意")
+    assert r2 == {"decision": "approved"}, r2
+
+
+# ---- H1：已有成功退货单 → cs08_return_workflow 短路，不再触发审批/建单 ----
+
+def test_cs08_existing_return_short_circuits_no_reapproval():
+    """H1：预置 APPROVED 退货单 → cs08_return_workflow 返回 already_exists 且不 approval_required。"""
+    from copilot.context import UserContext
+    from copilot.db import connect
+    from copilot.tool import run_tool
+    ctx = UserContext(user_id=1, role="customer_service", store_id=1)
+    res = run_tool("T-X-01", ctx, order_id=438, item_id=438, quantity=1,
+                   reason="H1测试", request_id="txh1",
+                   approval={"decision": "approved", "approver_id": 5,
+                             "approved_at": "2026-09-17", "comment": "H1 test"})
+    assert res.ok, res
+    try:
+        fake = _fake(AIMessage(content="", tool_calls=[
+            tool_call("cs08_return_workflow", {"order_no": "ORD_01_000438"})]),
+            AIMessage(content="该订单已有退货申请"))
+        g = build_react_graph(model=fake, mode="CUSTOMER_SERVICE")
+        out = run_agent_react(g, "t_h1", _session("CUSTOMER_SERVICE", "s_h1"),
+                              "ORD_01_000438 申请退货")
+        resp = out["response"]
+        assert resp["status"] == "completed", resp
+        assert resp["approval_required"] is False, resp
+        assert (resp.get("result") or {}).get("status") == "already_exists", resp["result"]
+        assert not out["state"].get("__interrupt__"), "已有退货单不应触发 interrupt"
+    finally:
+        conn = connect()
+        cur = conn.cursor()
+        cur.execute("DELETE FROM audit_logs WHERE request_id='txh1'")
+        cur.execute("DELETE FROM after_sales_requests WHERE idempotency_key='txh1'")
+        conn.commit()
+        cur.close()
+        conn.close()
+
+
 # ---- F1：熔断计数按"单次用户请求"计，跨轮不得累计 ----
 
 def test_fuse_resets_per_turn_long_thread():
