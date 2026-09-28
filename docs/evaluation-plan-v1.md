@@ -1,9 +1,10 @@
-# E-commerce Agent 评估计划 V1.2（Evaluation Plan，冻结版）
+# E-commerce Agent 评估计划 V1.2.3（Evaluation Plan，冻结版）
 
-> 版本：**V1.2（Frozen）**
-> 日期：2026-09-27
+> 版本：**V1.2.3（Frozen）**
+> 日期：2026-09-28
 > 定位：Agent「效果 + 性能 + 安全」评估实施方案（**非**业务冻结基线；不推翻任何 Frozen 契约）
-> 上游：`docs/agent-plan-b-react-v1.md`（方案 B，已落地）；Correctness 层 = SC 26 条 + sc_runner + 160 测试
+> 上游：`docs/agent-plan-b-react-v1.md`（方案 B，已落地）；Correctness 层 = SC 26 条 + sc_runner + 175 测试
+> （以当前 HEAD 的 pytest 计数为准；修复窗口推进使计数从 160 增长）
 > （源于 `docs/agent-evaluation-v2-v1.md`（Spec-3），该文档已 **SUPERSEDED**，其资产并入本方案）
 > V1.0 → V1.1 变更：经两轮外部审查 + 代码核对后冻结。新增 M6/M7/M8，修正 M1/M2/M4/M5 判定口径，
 > 补 Reproducibility Metadata。指标结构冻结，后续只许改实现不许改定义。
@@ -11,12 +12,15 @@
 > 明确为 Retrieval 级；M1 no_tool/clarify 的 Precision/Recall 标 N/A；M6 拆结构性 fake 测试 + live 行为测试两源；
 > M2/M3/M7 统一 required_facts/forbidden_facts；M5 graph build 不计 E2E；M8 coverage 公式显式化 + 不适用≠0%；
 > Metadata 补 embedding/retrieval 版本。
+> V1.2.2 → V1.2.3 变更：**对齐修复窗口最终语义（fix-plan 0~7 全部落地提交）**。Correctness 计数
+> 160→175；CS-08 already_exists 两路径（§2.4 resume 保护 + §3.2 副作用口径）；CS-06 在途超期→ANOMALY（H2）；
+> CS-08 可退数量成功态（H3）；OP-03 谓词用候选非空不引用 units（M1）；M6 补 H4 否定句。
 
 ---
 
 ## 0. 一句话概括
 
-在 Correctness 层（160 测试 + SC 确定性断言 + G2/G3/G5/G6）之上，新增 **Effectiveness / Performance / Safety**
+在 Correctness 层（175 测试 + SC 确定性断言 + G2/G3/G5/G6）之上，新增 **Effectiveness / Performance / Safety**
 三层共 8 组指标，产出可写进简历的数字。执行：**离线 fake LLM 验证管线 → live DeepSeek 复跑出数字**
 （每 case 重复 3 次，temperature=0，报告均值 + 稳定性）。
 
@@ -41,7 +45,7 @@ P1     nDCG / Dense-vs-Hybrid / LLM-as-judge / 复杂 Reranker / 复杂负载   
 
 ### 1.2 边界（诚实声明）
 
-- ❌ 不声称覆盖率：160 测试 ≠ code coverage，简历只能写「160 项自动化测试通过」。
+- ❌ 不声称覆盖率：175 测试 ≠ code coverage，简历只能写「175 项自动化测试通过」（以 HEAD 计数为准）。
 - ❌ 不声称生产级：单用户 Demo + 合成数据，数字只代表本项目测试集。
 - ❌ V1 不做 Hybrid/Reranker/nDCG（等 Dense 结果出来若值得改进，再立对照实验）。
 - ✅ 可复现：固定 seed / 测试集 / AS_OF_DATE / live 跑法，且报告带 Reproducibility Metadata（§4）。
@@ -138,7 +142,14 @@ P1     nDCG / Dense-vs-Hybrid / LLM-as-judge / 复杂 Reranker / 复杂负载   
 
 - 标答：`data/scenarios/eval/scenarios.yaml` `nature=data`（26 条）的 expected_route / expected_formal_result。
 - **M2 判定不直接用 expected_route**（跨工具合法路径结构不同），而是每个 workflow 定义一个**业务结果谓词**（§3.2）+ 约束 + 副作用 + Final Answer Fidelity。expected_route 降级为编排 trace 参考（报告里标 expected / alternative-valid / wrong）。
-- Agent 层 question：按 trigger_type 生成自然语言问题（~26 模板）。workflow 类 SC 第二跳自动 `resume={"decision":"approved"}`。
+- Agent 层 question：按 trigger_type 生成自然语言问题（~26 模板）。
+- **resume 保护（V1.2.3）**：workflow 类 SC 第一跳**可能不 interrupt**——CS-08 订单已有成功退货单时短路返回
+  `already_exists`（H1，不调 T-X-01、`approval_required=false`）。harness 第二跳 resume 前必须读
+  `graph.get_state(thread_id)` 检查 `__interrupt__`：有挂起才 `Command(resume=...)`；无挂起按
+  `already_exists` / 直接完成处理，**不得对无挂起图打 resume**（否则报错/空转）。
+- **最终语义对齐（V1.2.3，fix-plan 0~7 已落地）**：CS-06 在途超期（已发货未送达且 `promised<as_of`）→
+  ANOMALY（H2）；CS-08 可退数量只算成功态 APPROVED/COMPLETED/PROCESSING（H3）；OP-03 谓词用「候选清单
+  非空 / 命中指定 SKU」，**不引用精确 units**（M1：SKU_01_SLOW_01 units 6→4）。
 
 ### 2.5 Latency（无测试集，复用四类集 + 埋点）
 
@@ -178,7 +189,8 @@ Argument Accuracy        = case-level（一条 case 全部 required_args 键值�
 Task Success =
   Business Result    （谓词：结论值对，如 eligible=true / anomaly=NORMAL / has_reco=true）
   AND Required Constraints（如：先 eligibility、必须 interrupt、确认后才 Action——对应 R5/R10）
-  AND Required Side Effects（如：T-X-01 成功 + audit 存在 + 幂等；OP-05 无业务写则只验状态）
+  AND Required Side Effects（CS-08：**每订单有且仅一次 T-X-01 建单**——首次→建单+audit；重复申请→
+      `already_exists`（H1 短路，不调 T-X-01，副作用=不重复触发）；OP-05 无业务写则只验状态）
   AND Final Answer Fidelity（required_facts 结构化判定：答案含关键事实，不含错误结论；
       每条 case 可同时定义 forbidden_facts——答案含错误结论即失败）
 ```
@@ -296,7 +308,9 @@ scripts/eval_metrics.py
 - 两阶段：**Phase A 离线**（判定函数单测 + fake 预设正确工具跑全量应全过 + RAG 确定性直接出数）→ **Phase B live**（repeat=3 出真数字）。
 - 复用 `build_react_graph` / `run_agent_react` / `run_agent`（legacy）、`collect_calls`、`sc_runner` 派生逻辑、`search_knowledge`。
 - 代码改动面：`react.py` latency 计时（1 处）+ token 采集（~15 行，P1）；其余全部新增。
-- 跑后清理：CS-08 幂等键为确定性 `CS08-{order}-{item}`，同订单重跑天然幂等返回原单；跑完删除 CS08-* 售后/审计行（同 eval_g3 做法）。
+- 跑后清理（V1.2.3 升级为**必需**）：CS-08 已由 H1 短路——订单已有退货单时重跑返回 `already_exists`、不再
+  interrupt。**repeat=3 必须在 run 间删除 CS08-* 售后/审计行**（否则第 2/3 次全走 already_exists，无法复现
+  interrupt→建单路径）；幂等键 `CS08-{order}-{item}` 保证同 run 内不双写。
 
 ## 6. 交付物与工作量
 
@@ -326,7 +340,7 @@ scripts/eval_metrics.py
 
 优先：**Tool Plan Accuracy / Task Success / Conditional Multi-hop Success / RAG Hit@5 / E2E P95**，
 第六个在 **Grounded Answer** 与 **Unauthorized Execution = 0%** 中选一。
-README 分四层展示：Correctness（160 tests）/ Effectiveness（M1~M4, M7）/ Performance（M5）/ Safety（M6）。
+README 分四层展示：Correctness（175 tests）/ Effectiveness（M1~M4, M7）/ Performance（M5）/ Safety（M6）。
 
 ## 9. 修订记录
 
@@ -337,3 +351,4 @@ README 分四层展示：Correctness（160 tests）/ Effectiveness（M1~M4, M7�
 | V1.2 | 2026-09-27 | **仅定义修正，指标集不变**。M4 Recall@5→Hit@5、Abstention 明确 Retrieval 级（Answer 级归 M7/M2）；M1 no_tool/clarify 的 Precision/Recall 标 N/A；M6 拆结构性 fake 测试 + live 行为测试两源（防 Block/Execution 0/0）；M2 补 forbidden_facts；M2/M3/M7 统一 required_facts；M5 graph build 不计 E2E（warm/cached graph）；M8 coverage 公式显式化 + 结构性不支持标 N/A 不标 0% + 非严格因果表述纪律；M7 Citation 改名 Citation Retrieval Support；Metadata 补 embedding_model/retrieval_config_version；各数据集只共享字段约定不统一文件结构 |
 | V1.2.1 | 2026-09-27 | 数据实测口径修正（非定义变更）：M3 风险枚举为 **HIGH/NORMAL**（原文 LOW 系笔误）；HIGH 侧实测仅 1 个 SKU（`SKU_01_STOCKOUT_01`；ANOMALY_DROP=NORMAL、SLOW/OVERSTOCK 对缺货风险 DATA_UNAVAILABLE）；§7 风险行同步 |
 | V1.2.2 | 2026-09-27 | **共享数据解耦（方案 A）**：`rag_gold.yaml` 改为 **M4 专用**（30 条新 schema，answerable/acceptable_docs）；恢复旧 8 条为 `rag_gold_v1.yaml`（**Correctness 冻结副本**，供 `test_rag_gold_all_hit` / `eval_g5.py` 读取，`expect_doc` 格式）；补「共享数据迁移纪律」（改共享文件须同一提交内枚举/隔离读者 + 重跑测试 + 记修订）；修复因转换共享文件导致的 Correctness 层 `test_rag_gold_all_hit` 回归（KeyError: expect_doc） |
+| V1.2.3 | 2026-09-28 | **对齐修复窗口最终语义（fix-plan 0~7 全部落地提交 `09bc470`/`3d6ca03`）**。Correctness 160→175（以 HEAD pytest 为准）；CS-08 `already_exists` 两路径——§2.4 resume 前查 `__interrupt__`、§3.2 副作用改「每订单仅一次 T-X-01」、§5 跑后清理升级为必需（repeat 语义）；CS-06 在途超期→ANOMALY（H2）/ CS-08 可退数量成功态（H3）/ OP-03 候选非空（M1）前瞻收口；M6 补 H4 否定句 |

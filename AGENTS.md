@@ -331,3 +331,16 @@ AI 必须：
 | V1.18 | 2026-09-23 | **方案 B 落地**：Agent Runtime 从意图路由演进为 **ReAct 工具调用式**（`copilot/agent/react.py`：LLM 看工具目录→自主调用→确定性工具裁定，R4/R5/R10 保持）；索引实施规划 `docs/agent-plan-b-react-v1.md`（V1.5.2）；意图路由（router/registry/llm_router/orchestrator）**归档为 AGENT_BACKEND=legacy 回退（DEPRECATED）**，op05.py 退役 |
 | V1.19 | 2026-09-27 | **Agent 评估计划 V1.1 冻结**（`docs/evaluation-plan-v1.md`：Effectiveness/Performance/Safety 三层，M1~M8 + Reproducibility Metadata）；Spec-3 `agent-evaluation-v2-v1.md` **标记 SUPERSEDED**（意图路由时代，断言模型与 ReAct 不匹配；SC/sc_runner/rag_gold 资产并入新方案） |
 | V1.20 | 2026-09-27 | 评估计划 **V1.1→V1.2**（仅定义修正，指标集不变）：M4 Hit@5、Abstention 明确 Retrieval 级、M6 拆结构性/live 两源、M2/M3/M7 统一 required_facts、M5 graph build 不计 E2E、M8 coverage 公式化 |
+| V1.21 | 2026-09-28 | 评估计划 **V1.2.3**：对齐修复窗口最终语义（fix-plan 0~7 全落地 `09bc470`/`3d6ca03`）——CS-08 already_exists 两路径、CS-06 在途超期→ANOMALY、成功态口径、OP-03 候选非空、M6 补 H4、Correctness 160→175；跨窗口协调文档 `coordination-fix-eval-alignment-v1.md` 升级双向；新增 §18 跨窗口协作纪律 |
+
+---
+
+## 18. Cross-Window Coordination（跨窗口协作纪律，2026-09-28 增补）
+
+> 本仓库可能由多个 AI 窗口（会话）并发在同一工作树工作（如修复窗口 / 评测窗口）。为防止相互破坏，任何窗口遵守：
+
+1. **定向 git**：只 `git add <具体文件>`，禁止 `add -A` / `commit -a` / `checkout .` / `stash`——防止收走或回滚另一窗口的未提交改动。
+2. **改共享文件前对齐**：动 `react.py` / `sc_runner.py` / `data/scenarios/eval/scenarios.yaml` / `scripts/eval_*.py` 等两窗口共用文件前，先 `git status` 确认无对方未提交改动。
+3. **语义变更先通报**：业务语义变更（如 CS-08 already_exists / H2 在途超期 / M1 慢销口径）须先在跨窗口协调文档 `docs/coordination-fix-eval-alignment-v1.md` 通报，再改评估假设 / 冻结文档。
+4. **冻结文件双方不碰**：`data/scenarios/eval/scenarios.yaml`、`data/eval-cases/rag_gold_v1.yaml` 任何窗口都不改。
+5. **数字口径动态化**：报告 / 简历里的测试计数写「当前 HEAD 的 pytest 实数」，不硬编码（当前 175）。

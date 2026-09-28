@@ -19,7 +19,8 @@
 #   - capability = 调用了 request_capability(domain) 且未越权调业务工具
 #   - clarify = 无工具调用且返回需用户补充；no_tool = 无工具调用且正常回答
 #   - Precision/Recall 仅 tool-bearing cases；clarify/no_tool 标 N/A
-# 分布：12 单 + 4 知识 + 4 workflow + 8 多 + 5 clarify + 5 no_tool + 4 capability + 3 边界
+# 分布：12 单 + 4 知识 + 3 workflow + 8 多 + 5 clarify + 5 no_tool + 4 capability + 4 边界
+# （ts-018「需要补货吗」为咨询/发起歧义 → 边界型，allowed 两工具；V1.2.3）
 # 实体均来自 DB 实测（order_no/sku_code 存在）
 
 cases:
@@ -196,10 +197,11 @@ cases:
     mode: OPERATIONS
     store_id: 1
     question: "SKU_01_STOCKOUT_01 需要补货吗"
-    plan_type: workflow_request
+    plan_type: boundary
     acceptable_plan:
-      type: workflow_request
-      required_tools: [op05_restock_workflow]
+      type: boundary
+      required_tools: [analyze_stockout_risk, op05_restock_workflow]
+      allowed_tools: [analyze_stockout_risk, op05_restock_workflow]
       required_args: {sku_code: SKU_01_STOCKOUT_01}
 
   - id: ts-019
