@@ -83,7 +83,14 @@ def handle_pending(state: AgentRuntimeState) -> dict:
         accepted = approval_text_decision(message) == "approved"   # H4：否定优先/疑问守卫
         task["status"] = COMPLETED if accepted else TERMINATED
         task["current_step"] = "confirm"
-        msg = "已确认，补货建议生效。" if accepted else "已取消该操作。"
+        # L3：确认话术按意图区分（退货确认不再误显补货文案）
+        if accepted:
+            if task.get("intent") == "return_eligibility":
+                msg = "已确认，退货申请流程已启动。"
+            else:
+                msg = "已确认，补货建议生效。"
+        else:
+            msg = "已取消该操作。"
         exec_ = _emit(state.get("execution", {}), "human_confirmed", "confirm",
                       payload={"decision": "accepted" if accepted else "rejected"})
         return {"task": task, "execution": exec_, "__next": "end", "response": {

@@ -50,6 +50,7 @@ def sales_anomaly(conn, sku: dict, store_id: int, as_of: str,
     prev = _sales_between(conn, sku["id"], store_id,
                           (as_d - datetime.timedelta(days=14)).isoformat(),
                           (as_d - datetime.timedelta(days=7)).isoformat())
+    baseline_insufficient = prev == 0    # L6：前 7 天无销量基线；判定按口径不判异常，仅标注
     drop = (1 - recent / prev) if prev > 0 else 0.0
     is_anomaly = drop >= threshold
     price_ev = _price_drop_evidence(conn, sku["id"], store_id, as_of)
@@ -62,6 +63,7 @@ def sales_anomaly(conn, sku: dict, store_id: int, as_of: str,
         "baseline_policy": baseline_policy or "store_default",
         "recent_7d_units": recent,
         "prev_7d_units": prev,
+        "baseline_insufficient": baseline_insufficient,
         "drop_ratio": round(drop, 4),
         "threshold": threshold,
         "evidence": [{"type": "wow_drop", "recent_7d": recent, "prev_7d": prev, "drop_ratio": round(drop, 4)}]

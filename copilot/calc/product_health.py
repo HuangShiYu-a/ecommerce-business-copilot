@@ -28,11 +28,12 @@ def product_health(conn, sku: dict, store_id: int, as_of: str, window_days: int 
         conn, "SELECT 1 FROM inventory WHERE sku_id=%s AND store_id=%s", (sku["id"], store_id)) is not None
     # margin：有成本价（KD-OP-01 口径）
     present["margin"] = sku.get("cost_price") not in (None, 0, "")
-    # returns：该 sku 有售后申请
+    # returns：该 sku 有成功售后申请（L4：只算成功态，REJECTED/CANCELLED/PENDING 不计）
     present["returns"] = query_one(conn, """
         SELECT 1 FROM after_sales_requests ar
         JOIN order_items oi ON oi.id = ar.order_item_id
-        WHERE oi.sku_id=%s AND ar.store_id=%s""", (sku["id"], store_id)) is not None
+        WHERE oi.sku_id=%s AND ar.store_id=%s
+          AND ar.status IN ('APPROVED','COMPLETED','PROCESSING')""", (sku["id"], store_id)) is not None
     # feedback：该 sku 商品有反馈（经 product_id）
     present["feedback"] = query_one(conn, """
         SELECT 1 FROM customer_feedback WHERE product_id=%s AND store_id=%s""",

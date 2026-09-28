@@ -46,28 +46,15 @@ def _scope_match(chunk_scope: dict, scope: dict | None) -> bool:
     cc = (scope or {}).get("category_code")
     if cats and cc and cc not in cats:
         return False
+    # L5：类目未知时，仅排除纯类目专属规则（无 tag 激活通道），防类目规则外溢到未知类目；
+    # 带 tag 激活的规则（如 CONF 对）已通过上方 include_tags 检查，不误伤（类目未知仍经 tag 生效）
+    if cats and not cc and not inc:
+        return False
     return True
 
 
-def search_knowledge(conn, query_text: str, store_id: int,
-                     top_k: int = 5, threshold: float = 0.5,
-                     as_of: str = AS_OF_DATE, scope: dict | None = None) -> list[dict]:
-    """向量检索知识 chunk（R1 + R2 过滤）。"""
-    vec = embed_texts([query_text])[0]
-    qv = _vec_str(vec)
-    rows = query(conn, """
-        SELECT c.id, c.document_id, d.title, d.layer, c.section, c.content, c.metadata,
-               1 - (c.embedding <=> %s::vector) AS similarity
-        FROM knowledge.knowledge_chunks c
-        JOIN knowledge.knowledge_documents d ON d.id = c.document_id
-        WHERE c.embedding IS NOT NULL
-          AND d.status = 'ACTIVE'
-          AND d.effective_from <= %s::date
-          AND (d.effective_to IS NULL OR %s::date < d.effective_to)
-          AND (d.store_id = 0 OR d.store_id = %s)
-        ORDER BY c.embedding <=> %s::vector
-        LIMIT %s
-    """, (qv, as_of, as_of, store_id, qv, top_k))
+def _select_rows(rows, threshold: float, scope: dict | None) -> list[dict]:
+    """按阈值 + scope 过滤候选行（R2 Python 后滤；相似度降序，低于阈值即断）。"""
     out = []
     for r in rows:
         sim = round(float(r["similarity"]), 4)
@@ -83,6 +70,35 @@ def search_knowledge(conn, query_text: str, store_id: int,
             "layer": r["layer"], "section": r["section"], "content": r["content"],
             "similarity": sim,
         })
+    return out
+
+
+def search_knowledge(conn, query_text: str, store_id: int,
+                     top_k: int = 5, threshold: float = 0.5,
+                     as_of: str = AS_OF_DATE, scope: dict | None = None) -> list[dict]:
+    """向量检索知识 chunk（R1 + R2 过滤）。"""
+    vec = embed_texts([query_text])[0]
+    qv = _vec_str(vec)
+
+    def _query(k: int):
+        return query(conn, """
+            SELECT c.id, c.document_id, d.title, d.layer, c.section, c.content, c.metadata,
+                   1 - (c.embedding <=> %s::vector) AS similarity
+            FROM knowledge.knowledge_chunks c
+            JOIN knowledge.knowledge_documents d ON d.id = c.document_id
+            WHERE c.embedding IS NOT NULL
+              AND d.status = 'ACTIVE'
+              AND d.effective_from <= %s::date
+              AND (d.effective_to IS NULL OR %s::date < d.effective_to)
+              AND (d.store_id = 0 OR d.store_id = %s)
+            ORDER BY c.embedding <=> %s::vector
+            LIMIT %s
+        """, (qv, as_of, as_of, store_id, qv, k))
+
+    out = _select_rows(_query(top_k), threshold, scope)
+    # L5：scope 后滤可能漏掉相关低分文档——带 scope 且无命中时扩大召回重查一次
+    if scope and not out:
+        out = _select_rows(_query(top_k * 4), threshold, scope)
     return out
 
 

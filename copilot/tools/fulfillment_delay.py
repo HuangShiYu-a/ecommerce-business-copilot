@@ -28,7 +28,8 @@ class AnalyzeFulfillmentDelay(Tool):
         order = get_order(self.conn, order_no, ctx.store_id)
         if order is None:
             return err(NOT_FOUND, "订单不存在")
-        result = fulfillment_delay(self.conn, order, ctx.store_id)
+        from ..config import AS_OF_DATE
+        result = fulfillment_delay(self.conn, order, ctx.store_id, as_of=AS_OF_DATE)
         if "undetermined" in result:
             return err(DATA_UNAVAILABLE, result["undetermined"])
         result.update(order_no=order_no)

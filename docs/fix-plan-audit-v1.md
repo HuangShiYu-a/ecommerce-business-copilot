@@ -351,35 +351,81 @@ Gate 1 核查结果：
 - **不达标**：停在本阶段修断言/逻辑，不进入阶段 2。
 
 ### 阶段 2 — 对齐规格批（H2）
-- **操作**：fulfillment.py 加 `as_of` 参数、delivered 空时 `promised<as_of→ANOMALY(overdue_in_transit)` → tools/fulfillment_delay.py + sc_runner.py 传 AS_OF_DATE → SC-CS06-004 转 data 型断言 → 新增 ORD_01_001454→ANOMALY 测试。
-- **前置确认**：H2 口径边界（仅已发货未送达且超 promised 才判 ANOMALY）由业务确认后再动。
-- **Gate 2 核查**：pytest 全绿；ORD_01_001454→ANOMALY；grep 复核无黄金数据/e2e 依赖 CS-06 输出值；eval_g3/g5 PASS。
+- **操作**：fulfillment.py 加 `as_of` 参数、delivered 空时 `promised<as_of→ANOMALY(overdue_in_transit)`（`as_of=None→默认 AS_OF_DATE` 向后兼容）→ tools/fulfillment_delay.py 传 AS_OF_DATE（sc_runner 经 run_tool 直达工具，无需改动）→ **SC-CS06-004 不转 data 型**（scenarios.yaml 冻结，双方不碰）→ 改由 test_restock 加 H2 断言（ORD_01_001454→ANOMALY / ORD_01_000001→NORMAL / 送达类与缺 promised 回归）。
+- **前置确认**：H2 口径边界（仅已发货未送达且超 promised 才判 ANOMALY）已由用户确认。
+- **Gate 2 核查**：pytest 全绿；ORD_01_001454→ANOMALY(overdue_in_transit)；**`data/scenarios/eval/scenarios.yaml` 未被改动**；grep 复核无黄金数据/e2e 依赖 CS-06 输出值；eval_g3/g5 同基线。
 - **不达标**：若翻转触发某断言失败，回退修口径。
+
+**阶段 2 执行记录（2026-09-27 已完成）**
+- 已实施：fulfillment.py 加 `as_of` 参数 + `overdue_in_transit`（delivered 空时 `promised 日期 < as_of 日期`→ANOMALY，`as_of=None→默认 AS_OF_DATE`）；tools/fulfillment_delay.py 传 AS_OF_DATE（sc_runner 经 run_tool 直达工具，无需改动）；test_restock 新增 5 条 CS-06 断言（ORD_01_001454→ANOMALY/overdue_in_transit、ORD_01_000001→NORMAL/in_transit、ORD_01_000002→ANOMALY/over_promised、ORD_01_000003→NORMAL/on_time、ORD_01_000035→DATA_UNAVAILABLE/MISSING_PROMISED_AT）；`scenarios.yaml` 未改动；§9 阶段 2 措辞同步（SC-CS06-004 测试断言替代、sc_runner 无需改）。
+- Gate 2 核查：pytest 全量 **168 passed**（163+5）；ORD_01_001454→ANOMALY 定向断言 ✅；`scenarios.yaml` git diff 为空 ✅；grep 复核 tool_sel 只断言工具选择、SC-CS06 期望均为已送达/销售异常路径、无 CS-06 输出值依赖 ✅；eval_g3 **3/4 同基线**（UTF-8 重跑）✅；eval_g5 未重跑（H2 仅动 fulfillment，不涉记忆/RAG 路径，基线 2/2 不变）。
+- **Gate 2 判定：✅ 通过**
+- **发现缺陷（非 H2 引入，待决策处理）**：`scripts/eval_g3.py` 在 GBK 终端打印 live LLM 答案时，遇非 GBK 字符（如 ❌ U+274C）会 `UnicodeEncodeError` 崩溃，且崩溃**跳过结尾 CS08-\* 清理 → 残留数据**。本次已手动清理 + `PYTHONIOENCODING=utf-8` 规避重跑；建议后续修复（print 编码安全或强制 UTF-8 输出）。
 
 ### 阶段 3 — 口径统一批（H3 + L4）
 - **操作**：H3 给 create_return_request.py 的 SUM 加 `status IN (成功态)`（与 existing_return 统一，**先定死 PENDING 不占量**）；L4 给 product_health.py returns 维度加成功态过滤；各补测试。
 - **Gate 3 核查**：预置 REJECTED 行后同 item 仍可申请；健康度 returns 只算成功态；pytest 全绿。
 - **不达标**：PENDING 口径未定时暂停等待决策。
 
+**阶段 3 执行记录（2026-09-27 已完成）**
+- 已实施：create_return_request.py 可退数量 SUM 加 `status IN ('APPROVED','COMPLETED','PROCESSING')`（PENDING/REJECTED/CANCELLED 不占量，与 existing_return 口径统一，含注释定死）；product_health.py returns 维度加同款成功态过滤；test_restock 新增 2 条（`test_h3_rejected_not_counted_returnable`、`test_health_returns_success_status_only`，用受控插入 item 438/SKU_01_NORMAL_01 验证 REJECTED 不占量、REJECTED→missing / COMPLETED→present）。
+- Gate 3 核查：pytest 全量 **170 passed**（168+2）；预置 REJECTED 行后同 item 可申请 ✅；健康度 returns 只算成功态 ✅；残留 0。
+- **Gate 3 判定：✅ 通过**
+
 ### 阶段 4 — 健壮性批（M1 + M2 + M5）
 - **操作**：M1 把慢销窗口/状态过滤移入 oi 侧子查询；M2 给两个 workflow `_run` 补 `except Exception→error dict` + `except GraphInterrupt: raise`；M5 建单加 `LOCK TABLE ... IN SHARE ROW EXCLUSIVE MODE`（或仅标注）。
 - **Gate 4 核查**：`SKU_01_SLOW_01` 慢销 units 从 6→4；注入 DB 故障返回 error dict 而非 500；pytest 全绿。
 - **不达标**：修 SQL 语义 / 确认 interrupt 未被吞。
+
+**阶段 4 执行记录（2026-09-27 已完成）**
+- 已实施：slow_moving.py 把窗口/状态过滤移入 `orders` LEFT JOIN 的 ON + `order_items` 匹配有效订单（`SUM(oi.quantity)` 只算窗口内有效订单）；toolkit.py 两个 workflow `_run` 补 `except GraphInterrupt: raise` + `except Exception → {error_code:"DEPENDENCY_ERROR", error_detail}`（`GraphInterrupt` 从 `langgraph.errors` 导入，`interrupt` 仍从 `langgraph.types`）；create_return_request.py 建单前事务内 `LOCK TABLE after_sales_requests IN SHARE ROW EXCLUSIVE MODE`（M5 竞态加固）。
+- 新增测试 3 条：`test_slow_moving_window_units_excludes_cancelled`（SKU_01_SLOW_01 units==4）、`test_cs08_workflow_internal_error_returns_error_dict`、`test_op05_workflow_internal_error_returns_error_dict`（monkeypatch 注入 RuntimeError → DEPENDENCY_ERROR）。
+- Gate 4 核查：pytest 全量 **173 passed**（170+3）；SKU_01_SLOW_01 units 6→4 ✅；注入 DB 故障返回 error dict ✅；既有审批流测试（test_cs08_eligible_approval_and_idempotent 等）全过 = interrupt 未被吞 ✅；残留 0。
+- **Gate 4 判定：✅ 通过**
 
 ### 阶段 5 — 文档对齐批（M3 + M4）
 - **操作**：tool.py 注释更正跨店守卫语义；agent-plan-b 补「前端自声明是 V1 取舍」备注。
 - **Gate 5 核查**：文档审阅确认；pytest 不受影响。
 - **不达标**：无（纯文档）。
 
+**阶段 5 执行记录（2026-09-27 已完成）**
+- 已实施（M3）：tool.py `cross_store_param` / `run_tool` 注释澄清——int 型 `order_id/item_id` 不走字符串前缀检测，由工具 SQL `store_id=ctx.store_id` 兜底（跨店 int id → NOT_FOUND，无越权；workflow 写路径已先经 `get_order_detail(ctx.store_id)` 确认归属本店）；字符串前缀跨店写才走 FORBIDDEN。
+- M4 处理：`docs/agent-plan-b-react-v1.md` 为**非冻结**文档，其 D9 诚实性声明（§3.3，145 行）已完整覆盖「V1 单用户 Demo、Workspace Mode 只是能力配置/岗位视角模拟、不构成 RBAC、前端可自由切换」→ **M4 无需改动，仅确认已记录**。
+- Gate 5 核查：pytest 全量 **173 passed**（与阶段 4 持平，纯注释改动无行为影响）✅。
+- **Gate 5 判定：✅ 通过**
+
 ### 阶段 6 — L 批（L1 + L3 + L5 + L6）
 - **操作**：L1 先决策（加 item_id 参数 or 仅标注）；L3 legacy 话术按 intent 区分；L5 rag.py 无命中重查 + 类目未知排除专属规则；L6 sales_anomaly 加 `baseline_insufficient` 字段。
 - **Gate 6 核查**：各自断言 + pytest 全绿；L1 若复杂则降级为标注。
 - **不达标**：停本阶段处理失败项。
 
+**阶段 6 执行记录（2026-09-27 已完成）**
+- 已实施：**L1**（用户采纳「仅标注」）toolkit.py 在 `items[0]` 处加 V1 限制注释；**L3** orchestrator.py `handle_pending` 确认话术按 `task.intent` 区分（`return_eligibility`→「退货申请流程已启动」，其余→补货话术）；**L5** rag.py——(a) `search_knowledge` 抽 `_select_rows` 过滤 helper + 带 scope 无命中时扩大召回重查（top_k×4），(b) `_scope_match` 类目未知时仅排除**纯类目专属**规则（无 tag 激活通道）；**L6** sales_anomaly.py 加 `baseline_insufficient` 字段（prev==0 标注，判定口径不变）。
+- **L5 迭代修正**：初版「类目未知一律排除」误伤 tag 激活的类目规则（CONF 对 7日/15日，`include_tags`+`category_codes` 双通道），导致 test_conflict_pair_rule_conflict / test_rag_gold_all_hit 变 resolved。改为「仅排除纯类目专属规则（无 tag 通道）」，CONF 对经 tag 命中不受影响，两测试恢复。
+- 新增测试 2 条：`test_scope_match_category_unknown_excludes`（含 CONF 双通道防误伤断言）、`test_sales_anomaly_baseline_insufficient_flag`（SKU_01_SLOW_HEALTHY_01 prev=0）。
+- Gate 6 核查：pytest 全量 **175 passed**（173+2）；L3 既有「已确认」测试保持（补货话术未破坏）；残留 0。
+- **Gate 6 判定：✅ 通过**
+
 ### 阶段 7 — 总回归 + 收尾（Gate 7）
 - **操作**：全量 pytest + eval_g3/g5 + 手动 UI 冒烟（退货不再重复触发、审批「不同意」正确拒绝）。
 - **收尾**：更新本文档状态（完成项 / 遗留项 L2、M5 若选标注）。
 - **退出条件**：全部 PASS，遗留项明确记录；L2 单列后续任务。
+
+**阶段 7 执行记录（2026-09-27 已完成）**
+- 补修：eval_g3.py GBK 打印缺陷（阶段 2 发现、用户批准并入 L 批、阶段 6 遗漏 → 阶段 7 补上）：main() 开头 `sys.stdout.reconfigure(encoding="utf-8", errors="replace")`，防 live LLM 答案含非 GBK 字符时 print 崩溃（崩溃曾跳过 CS08-* 清理）。
+- 回归：pytest 全量 **175 passed**（阶段 6 末已跑，阶段 7 无逻辑改动）；eval_g3 **3/4 同基线**（不再崩溃）；eval_g5 **2/2**（L5 改 rag 后 grounding 未破坏）。
+- **Live 冒烟（用户原始问题端到端验证）**：438 第一次申请 → `approval_required`（触发审批）→ 同意 → 建单 `ASR...94`；**第二次申请（新会话）→ completed、approval_required=false、result.status=already_exists**（含 existing_return）。「重复触发创建退货」确认修复。H4「不同意→rejected」由 test_react 确定性测试覆盖。
+- 残留：0（冒烟后清理 CS08-*）。
+- **Gate 7 判定：✅ 通过**
+
+## 实施状态总结（2026-09-27）
+
+**阶段 0~7 全部完成，各 Gate 全部通过。** 15 项审计缺陷处置：
+- **已修复（14 项）**：H1/H2/H3/H4、M1/M2/M3(注释)/M4(D9 覆盖确认)/M5(LOCK TABLE)、L1(标注)/L3/L4/L5/L6
+- **遗留（1 项）**：**L2**（幂等 dup 无状态过滤——被拒后重提命中旧单；需幂等键生成 + schema 唯一约束联动设计，复杂度最高，单列后续任务）
+- **非代码已知项**：eval_g3 补货确认 live LLM 抖动（基线即存在，非本轮引入）
+
+修复全景：pytest 160 → **175**（+15 测试）；CS-08 退货重复触发已短路为 already_exists；在途超期 188 单从 NORMAL 修正为 ANOMALY；可退数量/健康度统一成功态口径；慢销窗口口径修正（6→4）；workflow 异常不再冒泡 500。
 
 ---
 
@@ -400,6 +446,12 @@ Gate 1 核查结果：
 
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| V1.9 | 2026-09-27 | 阶段 7 执行记录（总回归通过：pytest 175/175、eval_g3 3/4、eval_g5 2/2、live 冒烟已修复用户原始问题）+ 实施状态总结（14 项修复、L2 遗留） |
+| V1.8 | 2026-09-27 | 阶段 6 执行记录（L1 标注/L3 话术/L5 RAG scope/L6 标注已完成、Gate 6 通过：pytest 175/175；L5 迭代修正避免误伤 CONF） |
+| V1.7 | 2026-09-27 | 阶段 5 执行记录（M3 注释澄清、M4 确认由 agent-plan-b D9 覆盖、Gate 5 通过：pytest 173/173 持平） |
+| V1.6 | 2026-09-27 | 阶段 4 执行记录（M1+M2+M5 已完成、Gate 4 通过：pytest 173/173；慢销 6→4、workflow 异常转 error dict） |
+| V1.5 | 2026-09-27 | 阶段 3 执行记录（H3+L4 已完成、Gate 3 通过：pytest 170/170；PENDING 不占量口径落地） |
+| V1.4 | 2026-09-27 | 阶段 2 执行记录（H2 已完成、Gate 2 通过：pytest 168/168、eval_g3 3/4 同基线；发现 eval_g3 GBK 打印缺陷待处理） |
 | V1.3 | 2026-09-27 | 阶段 1 执行记录（H4+H1 已实施、Gate 1 通过：pytest 163/163、eval_g3 3/4 同基线） |
 | V1.2 | 2026-09-27 | 阶段 0 基线执行记录落盘（pytest 160/160、eval_g3 3/4、eval_g5 2/2，无残留） |
 | V1.1 | 2026-09-27 | 追加 §8 实施项总清单、§9 阶段规划（Gate 0~7）、§10 依赖与决策点 |

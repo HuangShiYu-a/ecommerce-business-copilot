@@ -17,6 +17,7 @@ from __future__ import annotations
 from collections.abc import Callable
 
 from langchain_core.tools import StructuredTool
+from langgraph.errors import GraphInterrupt
 from langgraph.types import interrupt
 from pydantic import BaseModel, Field
 
@@ -206,6 +207,8 @@ def make_cs08_workflow_tool(ctx_provider: Callable[[], UserContext]) -> Structur
             order = get_order_detail(conn, ctx.store_id, order_no=order_no)
             if order is None or not order.get("items"):
                 return {"error_code": "DATA_UNAVAILABLE", "error_detail": "订单无明细行"}
+            # L1（V1 限制标注）：固定取 items[0] 整行退、每订单一张退货单；种子数据无多明细订单，
+            # 未实现按行/部分退。若要支持多行，需同步把 H1 的 already_exists 改为明细级。
             item = order["items"][0]
             decision = interrupt({
                 "type": "approval", "workflow": "CS-08", "order_no": order_no,
@@ -226,6 +229,11 @@ def make_cs08_workflow_tool(ctx_provider: Callable[[], UserContext]) -> Structur
             if res2.ok:
                 return {**res2.data, "eligible_reason": data.get("reason_code")}
             return {"error_code": res2.error_code, "error_detail": res2.error_detail}
+        except GraphInterrupt:
+            raise    # 审批中断必须放行，否则打断 HITL 机制
+        except Exception as exc:
+            # M2：内部异常转错误结果（对齐直连工具 run_tool 的 DEPENDENCY_ERROR 语义，防 500）
+            return {"error_code": "DEPENDENCY_ERROR", "error_detail": str(exc)}
         finally:
             conn.close()
 
@@ -276,6 +284,11 @@ def make_op05_workflow_tool(ctx_provider: Callable[[], UserContext]) -> Structur
             # 确认事件记录：随本轮 run_log（status=completed）+ 会话 ToolMessage 持久化；
             # V1 无采购单写工具，不写业务表（审查发现 3 明确：确认本身不单独落 audit）。
             return {**data, "status": "confirmed"}
+        except GraphInterrupt:
+            raise    # 审批中断必须放行，否则打断 HITL 机制
+        except Exception as exc:
+            # M2：内部异常转错误结果（对齐直连工具 run_tool 的 DEPENDENCY_ERROR 语义，防 500）
+            return {"error_code": "DEPENDENCY_ERROR", "error_detail": str(exc)}
         finally:
             conn.close()
 

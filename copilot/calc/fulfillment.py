@@ -1,25 +1,31 @@
 """物流履约异常判定（T-A-01，CS-06）。
 
-NORMAL：按时送达（delivered ≤ promised）
-ANOMALY：超 promised 未按时送达（delivered > promised）
+NORMAL：按时送达（delivered ≤ promised），或在途未超承诺日（as_of 时点）
+ANOMALY：超 promised 未按时送达（delivered > promised），或在途超承诺日（overdue_in_transit）
 UNDETERMINED：缺 promised_delivery_at（MISSING_PROMISED_AT）
 """
 from __future__ import annotations
 
+import datetime
+
 from ..db import query_one
 
 
-def fulfillment_delay(conn, order: dict, store_id: int) -> dict:
+def fulfillment_delay(conn, order: dict, store_id: int, as_of: str | None = None) -> dict:
     promised = order.get("promised_delivery_at")
     if not promised:
         return {"undetermined": "MISSING_PROMISED_AT"}
     delivered = order.get("delivered_at")
     if not delivered:
-        # 已发货未送达：查是否超 promised
-        overdue = False
-        return {"status": "ANOMALY" if overdue else "NORMAL",
-                "reason": "overdue" if overdue else "in_transit"}
-    import datetime
+        # H2：在途未送达——承诺日已过分析时钟 as_of → 在途超期 ANOMALY（原恒 NORMAL/in_transit）
+        from ..config import AS_OF_DATE
+        a = datetime.date.fromisoformat(as_of or AS_OF_DATE)
+        pd = datetime.datetime.fromisoformat(str(promised)).date()
+        overdue = pd < a
+        if overdue:
+            return {"status": "ANOMALY", "reason": "overdue_in_transit",
+                    "overdue_days": (a - pd).days}
+        return {"status": "NORMAL", "reason": "in_transit"}
     pd = datetime.datetime.fromisoformat(str(promised))
     dd = datetime.datetime.fromisoformat(str(delivered))
     late = dd > pd

@@ -28,11 +28,11 @@ def slow_moving_candidates(conn, store_id: int, as_of: str,
         FROM product_skus s
         LEFT JOIN products p ON p.id = s.product_id
         LEFT JOIN inventory inv ON inv.sku_id = s.id AND inv.store_id = s.store_id
-        LEFT JOIN order_items oi ON oi.sku_id = s.id
-        LEFT JOIN orders o ON o.id = oi.order_id
-              AND o.store_id = s.store_id
+        LEFT JOIN orders o ON o.store_id = s.store_id
               AND o.status IN ('PAID','PROCESSING','SHIPPED','COMPLETED')
               AND o.ordered_at >= (%s::date - make_interval(days => %s))
+        LEFT JOIN order_items oi ON oi.sku_id = s.id AND oi.order_id = o.id
+              AND oi.store_id = s.store_id
         WHERE s.store_id = %s
     """
     params: list = [as_of, lookback, store_id]

@@ -32,6 +32,12 @@ def audit_count(resource_id):
 
 
 def main() -> int:
+    # GBK 终端打印修复（阶段 7 补，阶段 2 发现的缺陷）：live LLM 答案含非 GBK 字符（如 ❌）
+    # 时 print 曾抛 UnicodeEncodeError 且崩溃跳过结尾 CS08-* 清理 → 强制 UTF-8 + 替换不可编码字符
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
     sess_cs = {"session_id": "g3", "user_id": 1, "workspace_mode": "CUSTOMER_SERVICE", "store_id": 1}
     sess_ops = {"session_id": "g3", "user_id": 1, "workspace_mode": "OPERATIONS", "store_id": 1}
 

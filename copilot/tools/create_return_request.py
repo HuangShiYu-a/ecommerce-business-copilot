@@ -70,14 +70,19 @@ class CreateReturnRequest(Tool):
             return ok({"return_request_id": dup["id"], "status": dup["status"],
                        "created_at": str(dup["created_at"]), "idempotent": True})
 
+        # H3：可退数量只算成功态（PENDING/REJECTED/CANCELLED 不占量；与 existing_return 口径统一）
         returned = query_one(self.conn, """
             SELECT COALESCE(SUM(quantity),0) AS q FROM after_sales_requests
-            WHERE order_item_id=%s AND store_id=%s""", (item_id, ctx.store_id))["q"]
+            WHERE order_item_id=%s AND store_id=%s
+              AND status IN ('APPROVED','COMPLETED','PROCESSING')""", (item_id, ctx.store_id))["q"]
         returnable = int(item["quantity"]) - int(returned)
         if int(quantity) > returnable:
             return err(PRECONDITION_FAILED, f"可退数量不足（可退 {returnable}，申请 {quantity}）")
 
         from ..config import AS_OF_DATE
+        with self.conn.cursor() as cur:
+            # M5：建单竞态加固——事务内锁表，串行化并发建单，防 MAX(id)+1 撞主键
+            cur.execute("LOCK TABLE after_sales_requests IN SHARE ROW EXCLUSIVE MODE")
         next_id = query_one(self.conn, "SELECT COALESCE(MAX(id),0)+1 AS n FROM after_sales_requests")["n"]
         request_no = f"ASR{ctx.store_id:02d}{next_id:09d}"
         with self.conn.cursor() as cur:

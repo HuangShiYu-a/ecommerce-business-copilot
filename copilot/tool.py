@@ -96,7 +96,9 @@ def reference_store(identifier: str) -> int | None:
 def cross_store_param(store_id: int, params: dict) -> str | None:
     """扫描参数中的门店引用，找到引用店 ≠ 上下文的参数名；无 → None。
 
-    仅按前缀判定（ORD_x_/SKU_x_）；无法解析前缀的不拦（由 SQL store_id 兜底）。
+    仅按字符串前缀判定（ORD_x_/SKU_x_）；int 型 order_id/item_id 无法解析前缀，
+    不在此拦截——由工具内部 SQL `WHERE ... store_id=ctx.store_id` 兜底（跨店 int id
+    → NOT_FOUND，无越权；workflow 写路径已先经 get_order_detail(ctx.store_id) 确认归属本店）。
     """
     for k, v in params.items():
         if isinstance(v, str):
@@ -120,7 +122,9 @@ def run_tool(tool_id: str, ctx: UserContext, conn=None, **params) -> ToolResult:
     """按 tool_id 调用；未传入 conn 则自建并关闭；异常兜底为 DEPENDENCY_ERROR。
 
     跨 store 引用（方向 A）：读工具（read_write=read）放开——按引用店替换 ctx 执行，
-    结果标注 source_store；写工具（read_write=write）仍 FORBIDDEN（跨店写越权）。
+    结果标注 source_store；写工具（read_write=write）对字符串前缀跨店引用返回 FORBIDDEN
+    （跨店写越权）。注：int 型 order_id/item_id 不走前缀检测，由工具 SQL store_id 过滤兜底
+    （→ NOT_FOUND），语义差异见 cross_store_param。
     """
     if not TOOLS:
         from . import tools  # noqa: F401  首次调用触发工具注册

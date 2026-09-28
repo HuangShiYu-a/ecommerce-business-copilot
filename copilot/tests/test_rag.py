@@ -98,3 +98,18 @@ def test_rag_gold_all_hit():
             else:
                 titles = [x["title"] for x in r["results"]]
                 assert case["expect_doc"] in titles, f"{case['id']}: {case['query']} 未命中"
+
+
+def test_scope_match_category_unknown_excludes():
+    """L5：类目未知时仅排除纯类目专属规则（防外溢）；tag 激活的类目规则不误伤。"""
+    from copilot.rag import _scope_match
+    # 纯类目专属规则（无 tag 通道）：类目未知 → 排除
+    assert _scope_match({"category_codes": ["beauty"]}, {"category_code": None}) is False
+    assert _scope_match({"category_codes": ["beauty"]}, None) is False
+    assert _scope_match({"category_codes": ["beauty"]}, {"category_code": "beauty"}) is True
+    assert _scope_match({"category_codes": ["beauty"]}, {"category_code": "apparel"}) is False
+    # 全局规则不受类目限制
+    assert _scope_match({}, {"category_code": "apparel"}) is True
+    # tag 激活的类目规则：类目未知时仍可经 tag 命中（CONF 对场景，防误排除）
+    conf = {"category_codes": ["apparel"], "include_tags": ["apparel-conflict-test"]}
+    assert _scope_match(conf, {"tags": ["apparel-conflict-test"]}) is True

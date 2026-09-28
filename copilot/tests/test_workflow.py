@@ -124,3 +124,44 @@ def test_cs08_reject_cancels():
     out = run_agent_react(g, "t5", sess, "", resume={"decision": "rejected"})
     assert out["response"]["status"] == "completed", out
     assert out["response"]["result"].get("decision") == "cancelled", out["response"]["result"]
+
+
+# ---- M2：workflow 内部异常转 error dict（不冒泡成 500），审批中断仍放行 ----
+
+def test_cs08_workflow_internal_error_returns_error_dict(monkeypatch):
+    """M2：CS-08 workflow 内部异常 → DEPENDENCY_ERROR error dict（对齐直连工具语义）。"""
+    from copilot.agent import toolkit
+    from copilot.context import UserContext
+
+    class Boom:
+        def __init__(self, conn):
+            self.conn = conn
+
+        def run(self, ctx, order_no=None, **kw):
+            raise RuntimeError("db boom")
+
+    monkeypatch.setattr(toolkit, "CheckReturnEligibility", Boom)
+    tool = toolkit.make_cs08_workflow_tool(
+        lambda: UserContext(user_id=1, role="customer_service", store_id=1))
+    res = tool.invoke({"order_no": "ORD_01_000438"})
+    assert res["error_code"] == "DEPENDENCY_ERROR"
+    assert "db boom" in res["error_detail"]
+
+
+def test_op05_workflow_internal_error_returns_error_dict(monkeypatch):
+    """M2：OP-05 workflow 内部异常 → DEPENDENCY_ERROR error dict。"""
+    from copilot.agent import toolkit
+    from copilot.context import UserContext
+
+    class Boom:
+        def __init__(self, conn):
+            self.conn = conn
+
+        def run(self, ctx, sku_code=None, **kw):
+            raise RuntimeError("db boom")
+
+    monkeypatch.setattr(toolkit, "CalculateRestockRecommendation", Boom)
+    tool = toolkit.make_op05_workflow_tool(
+        lambda: UserContext(user_id=1, role="operations", store_id=1))
+    res = tool.invoke({"sku_code": "SKU_01_STOCKOUT_01"})
+    assert res["error_code"] == "DEPENDENCY_ERROR"
