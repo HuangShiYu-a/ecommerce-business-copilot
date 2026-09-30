@@ -192,8 +192,12 @@ def _cs08(ctx, order_no: str) -> WorkflowResult:
     if res.ok:
         # H1：已有成功退货单 → 不再触发 N6 确认/建单（与 ReAct 版短路对齐）
         if res.data.get("existing_return"):
+            existing = res.data.get("existing_return")
             return WorkflowResult(
-                formal_result={**res.data, "status": "already_exists"},
+                formal_result={"status": "already_exists",
+                               "request_no": existing.get("request_no"),
+                               "message": f"订单 {order_no} 已有退货申请"
+                                          f"（{existing.get('request_no')}），不再重复创建"},
                 route_status="already_exists", status="completed",
                 confirmation_required=False,
             )

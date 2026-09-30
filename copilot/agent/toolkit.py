@@ -195,7 +195,10 @@ def make_cs08_workflow_tool(ctx_provider: Callable[[], UserContext]) -> Structur
             # 直接返回原单信息（幂等/防重复短路；资格判定结果不变，仅工作流层拦截）。
             existing = data.get("existing_return")
             if existing:
-                return {**data, "status": "already_exists",
+                # 工具收口（答案保真）：只返回权威结论字段，不合并 eligibility 的
+                # decision/reason_code——避免 LLM 把 already_exists 误读成 ineligible。
+                return {"status": "already_exists",
+                        "request_no": existing.get("request_no"),
                         "message": f"订单 {order_no} 已有退货申请（{existing.get('request_no')}），"
                                    "不再重复创建"}
             if data.get("decision") != "eligible":

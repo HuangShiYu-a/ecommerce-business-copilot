@@ -82,6 +82,8 @@ def _system_prompt(session: dict, working: dict, memory: str = "") -> list[Syste
         "若任务需要当前目录之外的权威工具（如缺货风险/销售异常等运营分析），**不得用其他工具"
         "（如库存）的数据自行推算结论**——必须调用 request_capability(domain) 请求切换，"
         "或明确告知用户需要对应能力模式；绝不可临场判断权威结论。",
+        "当工具返回 status 字段（如 already_exists/confirmed/cancelled）时，以 status 和 message "
+        "为最终结论直接转述，忽略其中 decision/reason_code 等过程字段，禁止自行改写结论。",
         "能力边界：只能调用当前模式目录内的工具（当前可用：" + "、".join(catalog_names(mode))
         + "）。若任务需要目录之外的专属工具，调用 request_capability(domain) 请求切换——"
         "不要编造或猜测目录外工具。示例：当前无运营工具时用户问『SKU_01_STOCKOUT_01 缺货风险"
