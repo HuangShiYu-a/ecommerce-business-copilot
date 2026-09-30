@@ -34,7 +34,7 @@ cases:
   - id: mh-002
     mode: OPERATIONS
     store_id: 1
-    question: "SKU_01_STOCKOUT_01 会断货吗？如果会，帮我查一下原因"
+    question: "SKU_01_STOCKOUT_01 缺货风险高不高？高的话帮我查一下原因"
     pattern: conditional_multihop
     first_tool: analyze_stockout_risk
     followup_condition: HIGH

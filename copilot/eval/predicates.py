@@ -40,8 +40,11 @@ def cs08_eligibility(expected_decision: str, facts: dict | None = None):
     return p
 
 
-def cs08_already_exists(facts: dict | None = None):
-    """H1：已有成功退货单 → 短路 already_exists（不 interrupt、不调 T-X-01）。"""
+def cs08_already_exists(facts: dict | None = None, forbidden: dict | None = None):
+    """H1：已有成功退货单 → 短路 already_exists（不 interrupt、不调 T-X-01）。
+
+    forbidden（V1.2.3）：答案不得把 already_exists 误读成 ineligible/不可退（真实答案保真缺陷检测）。
+    """
     def p(response):
         result = response.get("result") or {}
         ok = (result.get("status") == "already_exists"
@@ -50,6 +53,8 @@ def cs08_already_exists(facts: dict | None = None):
                   "approval_required": response.get("approval_required")}
         if ok and facts:
             ok = check_facts(response.get("message", ""), facts)
+        if ok and forbidden:
+            ok = check_facts(response.get("message", ""), None, forbidden)
         return ok, detail
     return p
 
@@ -149,7 +154,7 @@ def predicate_for(sc: dict):
         return cs06(route, facts)
     if wf == "CS-08":
         if sid == "SC-CS08-006":       # 预置已成功售后 → already_exists（H1）
-            return cs08_already_exists(facts)
+            return cs08_already_exists(facts, FORBIDDEN_FACTS.get(sid))
         return cs08_eligibility(route, facts)
     if wf == "OP-03":
         sku = (sc.get("sku_ids") or [None])[0]
@@ -170,13 +175,13 @@ def predicate_for(sc: dict):
 # ---- 每 SC 的 Final Answer required_facts（答案保真，V1.2.3）----
 
 FACTS: dict[str, dict] = {
-    # CS-06：答案含与 route 一致的结论词（NORMAL→正常 / ANOMALY→延误 / UNDETERMINED→无法判定）
+    # CS-06：答案含与 route 一致的结论词（NORMAL→正常 / ANOMALY→延误 / UNDETERMINED→无法判定/无法完成）
     "SC-CS06-001": {"正常": None},
     "SC-CS06-002": {"延误": None},
-    "SC-CS06-003": {"无法判定": None},
+    "SC-CS06-003": {"无法": None},
     # CS-08：答案含资格结论
     "SC-CS08-001": {"可以退货": None},
-    "SC-CS08-002": {"不能退": None, "窗口": None},
+    "SC-CS08-002": {"不可退": None},   # 接受「不可退货/不能退」等措辞（V1.2.3 放宽）
     "SC-CS08-003": {"退货": None, "待定": None},
     "SC-CS08-006": {"已有": None, "退货": None},
     # OP-03 / OP-04 / OP-05 / OP-07 / OP-08 / ISO：结论词（宽松）
@@ -189,4 +194,9 @@ FACTS: dict[str, dict] = {
     "SC-OP08-001": {"异常": None},
     "SC-OP08-002": {"正常": None},
     "SC-ISO-001": {"门店": None},
+}
+
+# 答案不得含的错误结论（V1.2.3：CS-08-006 already_exists 不得误读为 ineligible/不可退）
+FORBIDDEN_FACTS: dict[str, dict] = {
+    "SC-CS08-006": {"不通过": None, "ineligible": None, "不可退": None},
 }

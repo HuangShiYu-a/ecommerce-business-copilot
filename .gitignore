@@ -18,3 +18,4 @@ data/generated/*
 .idea/
 .vscode/
 .DS_Store
+reports/
