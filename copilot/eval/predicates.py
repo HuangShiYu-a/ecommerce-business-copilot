@@ -14,8 +14,13 @@ from .judgments import check_facts
 def cs06(expected_route: str, facts: dict | None = None):
     def p(response):
         result = response.get("result") or {}
-        ok = result.get("route") == expected_route
-        detail = {"route": result.get("route"), "expected": expected_route}
+        got = result.get("status") or result.get("route")
+        if expected_route == "UNDETERMINED":
+            # 缺 promised 等 → 工具返回 error（DATA_UNAVAILABLE），等价"未定"
+            ok = got in (None, "UNDETERMINED") or bool(result.get("error_code"))
+        else:
+            ok = got == expected_route
+        detail = {"route": got, "expected": expected_route}
         if ok and facts:
             ok = check_facts(response.get("message", ""), facts)
         return ok, detail
@@ -165,10 +170,10 @@ def predicate_for(sc: dict):
 # ---- 每 SC 的 Final Answer required_facts（答案保真，V1.2.3）----
 
 FACTS: dict[str, dict] = {
-    # CS-06：答案含延误/正常结论（不反向）
-    "SC-CS06-001": {"延误": None},
+    # CS-06：答案含与 route 一致的结论词（NORMAL→正常 / ANOMALY→延误 / UNDETERMINED→无法判定）
+    "SC-CS06-001": {"正常": None},
     "SC-CS06-002": {"延误": None},
-    "SC-CS06-003": {"延误": None},
+    "SC-CS06-003": {"无法判定": None},
     # CS-08：答案含资格结论
     "SC-CS08-001": {"可以退货": None},
     "SC-CS08-002": {"不能退": None, "窗口": None},

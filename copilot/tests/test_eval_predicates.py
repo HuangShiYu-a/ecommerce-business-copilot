@@ -12,9 +12,10 @@ def _resp(result, status="completed", msg="", approval_required=False):
 
 
 def test_cs06_routes():
-    assert cs06("ANOMALY")(_resp({"route": "ANOMALY"}, msg="订单已延误"))[0] is True
-    assert cs06("NORMAL")(_resp({"route": "ANOMALY"}))[0] is False
-    assert cs06("UNDETERMINED")(_resp({"route": "UNDETERMINED"}))[0] is True
+    # 工具实际返回 status 键（= NORMAL/ANOMALY/UNDETERMINED）
+    assert cs06("ANOMALY")(_resp({"status": "ANOMALY"}, msg="订单已延误"))[0] is True
+    assert cs06("NORMAL")(_resp({"status": "ANOMALY"}))[0] is False
+    assert cs06("UNDETERMINED")(_resp({"status": "UNDETERMINED"}))[0] is True
 
 
 def test_cs08_eligibility_and_already_exists():
