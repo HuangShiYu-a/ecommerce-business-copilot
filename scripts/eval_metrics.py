@@ -67,9 +67,22 @@ def _live(repeat: int, out: str | None, only: str | None) -> int:
     return 0
 
 
+def _baseline() -> int:
+    from copilot.eval.baseline import m8_report
+    rep = m8_report()
+    legacy = rep["legacy"]
+    print(f"[legacy] Task Success(业务): {legacy['run_success']}  coverage: {legacy['coverage']}")
+    for f in legacy["failures"]:
+        print(f"        {f}")
+    print(f"[react]  Task Success: {rep['react']['task_success']}  coverage: {rep['react']['coverage']}")
+    print(f"        multi-tool / multi-hop: {rep['react']['multi_tool']} / {rep['react']['multi_hop']}  (legacy N/A)")
+    return 0
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description="E-commerce Agent 评测 harness")
-    ap.add_argument("--mode", choices=["offline", "live"], help="offline=fake 验证；live=DeepSeek")
+    ap.add_argument("--mode", choices=["offline", "live", "baseline"],
+                    help="offline=fake 验证；live=DeepSeek；baseline=legacy vs ReAct")
     ap.add_argument("--set", choices=["all", "tool_sel", "task_success", "rag", "multihop", "safety"],
                     default="all")
     ap.add_argument("--repeat", type=int, default=3)
@@ -84,6 +97,8 @@ def main() -> int:
     if args.mode == "live":
         only = None if args.set == "all" else args.set
         return _live(args.repeat, args.out, only)
+    if args.mode == "baseline":
+        return _baseline()
     ap.print_help()
     return 1
 

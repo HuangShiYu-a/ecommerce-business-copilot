@@ -11,7 +11,7 @@ from .judgments import check_facts
 
 # ---- CS-06 履约 ----
 
-def cs06(expected_route: str, facts: dict | None = None):
+def cs06(expected_route: str, facts: dict | None = None, facts_on: bool = True):
     def p(response):
         result = response.get("result") or {}
         got = result.get("status") or result.get("route")
@@ -21,7 +21,7 @@ def cs06(expected_route: str, facts: dict | None = None):
         else:
             ok = got == expected_route
         detail = {"route": got, "expected": expected_route}
-        if ok and facts:
+        if ok and facts and facts_on:
             ok = check_facts(response.get("message", ""), facts)
         return ok, detail
     return p
@@ -29,18 +29,20 @@ def cs06(expected_route: str, facts: dict | None = None):
 
 # ---- CS-08 退货（查询 / 两路径）----
 
-def cs08_eligibility(expected_decision: str, facts: dict | None = None):
+def cs08_eligibility(expected_decision: str, facts: dict | None = None,
+                     facts_on: bool = True):
     def p(response):
         result = response.get("result") or {}
         ok = result.get("decision") == expected_decision
         detail = {"decision": result.get("decision"), "expected": expected_decision}
-        if ok and facts:
+        if ok and facts and facts_on:
             ok = check_facts(response.get("message", ""), facts)
         return ok, detail
     return p
 
 
-def cs08_already_exists(facts: dict | None = None, forbidden: dict | None = None):
+def cs08_already_exists(facts: dict | None = None, forbidden: dict | None = None,
+                        facts_on: bool = True):
     """H1：已有成功退货单 → 短路 already_exists（不 interrupt、不调 T-X-01）。
 
     forbidden（V1.2.3）：答案不得把 already_exists 误读成 ineligible/不可退（真实答案保真缺陷检测）。
@@ -51,9 +53,9 @@ def cs08_already_exists(facts: dict | None = None, forbidden: dict | None = None
               and response.get("approval_required") is False)
         detail = {"status": result.get("status"),
                   "approval_required": response.get("approval_required")}
-        if ok and facts:
+        if ok and facts and facts_on:
             ok = check_facts(response.get("message", ""), facts)
-        if ok and forbidden:
+        if ok and forbidden and facts_on:
             ok = check_facts(response.get("message", ""), None, forbidden)
         return ok, detail
     return p
@@ -144,18 +146,22 @@ def iso_cross_store():
 
 # ---- 按 SC 派发 ----
 
-def predicate_for(sc: dict):
-    """sc：data/scenarios/eval/scenarios.yaml 里的一条 data SC → 谓词闭包。"""
+def predicate_for(sc: dict, facts_on: bool = True):
+    """sc：data/scenarios/eval/scenarios.yaml 里的一条 data SC → 谓词闭包。
+
+    facts_on=False：跳过 Final Answer Fidelity（M8 legacy 对比用——legacy 模板答案
+    不含自然语言 facts 关键词，业务结果对比须用纯业务口径）。
+    """
     wf = sc.get("workflow")
     sid = sc.get("scenario_id")
     route = sc.get("expected_route")
     facts = FACTS.get(sid)
     if wf == "CS-06":
-        return cs06(route, facts)
+        return cs06(route, facts, facts_on)
     if wf == "CS-08":
         if sid == "SC-CS08-006":       # 预置已成功售后 → already_exists（H1）
-            return cs08_already_exists(facts, FORBIDDEN_FACTS.get(sid))
-        return cs08_eligibility(route, facts)
+            return cs08_already_exists(facts, FORBIDDEN_FACTS.get(sid), facts_on)
+        return cs08_eligibility(route, facts, facts_on)
     if wf == "OP-03":
         sku = (sc.get("sku_ids") or [None])[0]
         return op03(route, sku)
