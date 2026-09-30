@@ -300,6 +300,18 @@ def test_slow_moving_window_units_excludes_cancelled():
     assert cand["SKU_01_SLOW_01"]["units"] == 4, cand["SKU_01_SLOW_01"]
 
 
+def test_slow_moving_full_scan_no_filter():
+    """慢销全量：不传 sku_code/category → 返回全店候选（含 SKU_01_SLOW_01）。
+
+    修复：原 gate 对「无参」返回 PERF_QUERY_FAIL，无法回答『有哪些慢销商品』；
+    calc 本就支持 category=None 全店扫描，放行即可。
+    """
+    res = run_tool("T-A-04", ops_ctx(1))
+    assert res.ok, res
+    cand = {c["sku_code"]: c for c in res.data["candidates"]}
+    assert "SKU_01_SLOW_01" in cand, res.data
+
+
 # ---- L6：销售异常基线不足标注 ----
 
 def test_sales_anomaly_baseline_insufficient_flag():

@@ -60,8 +60,8 @@ _DESCRIPTIONS: dict[str, str] = {
         "仅回答能否退货的咨询；用户要『申请/发起退货』时必须走 cs08_return_workflow。"),
     "query_product_performance": (
         "低动销候选筛选（mode=slow_moving）。"
-        "用于：『有没有慢销/滞销商品』。给 sku_code 单查或 category 类目扫描（二选一）。"
-        "返回即正式候选清单。"),
+        "用于：『有没有慢销/滞销商品』。给 sku_code 单查、category 类目扫描，"
+        "或两者都不传返回全店慢销候选。返回即正式候选清单。"),
     "calculate_product_health": (
         "按 SKU 计算商品健康度（五核心维 + 完整度 + 评分/等级）。"
         "用于：『健康度/完整度怎么样』。需要 sku_code（window_days 可选）。返回即正式健康判定。"),

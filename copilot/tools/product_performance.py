@@ -7,7 +7,7 @@ from __future__ import annotations
 from pydantic import BaseModel, Field
 
 from ..calc.slow_moving import slow_moving_candidates
-from ..tool import DATA_UNAVAILABLE, INVALID_INPUT, Tool, err, ok, register_tool
+from ..tool import INVALID_INPUT, Tool, err, ok, register_tool
 
 
 @register_tool
@@ -15,14 +15,14 @@ class QueryProductPerformance(Tool):
     tool_id = "T-A-04"
     name = "query_product_performance"
     category = "Analysis"
-    description = "低动销候选筛选（mode=slow_moving）：单 SKU 校验或类目扫描，返回窗口销量 ≤ 阈值的候选清单"
+    description = "低动销候选筛选（mode=slow_moving）：单 SKU 校验 / 类目扫描 / 全店候选，返回窗口销量 ≤ 阈值的候选清单"
     risk = "LOW"
     read_write = "read"
     allowed_roles = ("operations",)
 
     class Input(BaseModel):
         sku_code: str | None = Field(default=None, description="单 SKU 校验（可选）")
-        category: str | None = Field(default=None, description="类目名称片段，如「美妆」（可选，类目扫描）")
+        category: str | None = Field(default=None, description="类目名称片段，如「美妆」（可选，类目扫描；不传则全店候选）")
         mode: str = Field(default="slow_moving")
 
     input_model = Input
@@ -30,8 +30,6 @@ class QueryProductPerformance(Tool):
     def run(self, ctx, sku_code=None, category=None, mode="slow_moving", **kw):
         if mode != "slow_moving":
             return err(INVALID_INPUT, f"未支持模式: {mode}")
-        if not sku_code and not category:
-            return err(DATA_UNAVAILABLE, "PERF_QUERY_FAIL")
         from ..config import AS_OF_DATE
         result = slow_moving_candidates(self.conn, ctx.store_id, AS_OF_DATE,
                                         category=category, sku_code=sku_code)
