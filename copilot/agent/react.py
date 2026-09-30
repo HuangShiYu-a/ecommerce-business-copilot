@@ -261,10 +261,13 @@ def resolve_text_action(graph, thread_id: str, session: dict, message: str) -> t
 
 
 def _persist_session(session: dict, thread_id: str, status: str, message: str,
-                     tool_names: list[str] | None = None) -> None:
+                     tool_names: list[str] | None = None,
+                     latency_ms: int | None = None) -> None:
     """ReAct 会话/日志持久化（W6 决策 1）：写 runtime.session（侧栏/重启）+ run_log。
 
     降级不阻断：持久化失败不干扰对话。workspace_mode 直接写 role 列（侧栏徽章映射）。
+    latency_ms（M5）：单次 graph.invoke 墙钟时长；Pre-HITL（request→interrupt）与
+    Post-HITL（resume→final）各记一次（分别由 approval_required / completed 状态区分）。
     """
     try:
         from ..runtime.store import create_session, write_run_log
@@ -279,7 +282,8 @@ def _persist_session(session: dict, thread_id: str, status: str, message: str,
             f"react-{int(time.time() * 1000)}-{thread_id[:8]}", sid, uid,
             mode_to_role(mode), store,
             intent=(tool_names[-1] if tool_names else None), workflow=None,
-            route_status=status, tool_calls=tool_names, status=status)
+            route_status=status, tool_calls=tool_names, status=status,
+            latency_ms=latency_ms)
     except Exception:
         pass
 
@@ -501,6 +505,7 @@ def run_agent_react(graph, thread_id: str, session: dict, message: str,
         execution["tool_calls"] = 0
 
     token = _CURRENT_SESSION.set(session)
+    _t0 = time.time() * 1000
     try:
         if resume is not None:
             from langgraph.types import Command
@@ -519,6 +524,7 @@ def run_agent_react(graph, thread_id: str, session: dict, message: str,
             }, config)
     finally:
         _CURRENT_SESSION.reset(token)
+    latency_ms = int(time.time() * 1000 - _t0)   # M5：单次 invoke E2E（warm graph）
 
     # 审批 interrupt（W3.3）：workflow 工具触发 interrupt → 图暂停 → approval_required 响应
     interrupts = out.get("__interrupt__") or []
@@ -533,7 +539,8 @@ def run_agent_react(graph, thread_id: str, session: dict, message: str,
         }
         if not capability_replay and resume is None:
             _persist_session(session, thread_id, "approval_required", message,
-                             tool_names=_round_tool_names(out, prev_msgs))
+                             tool_names=_round_tool_names(out, prev_msgs),
+                             latency_ms=latency_ms)
         resp["role"] = session.get("workspace_mode") or "operations"
         resp["store_id"] = session.get("store_id", 1)
         return {"response": resp, "state": out}
@@ -544,7 +551,8 @@ def run_agent_react(graph, thread_id: str, session: dict, message: str,
         if resp.get("status") == "completed":
             _extract_memory(session, message)
         _persist_session(session, thread_id, resp.get("status", "error"), message,
-                         tool_names=_round_tool_names(out, prev_msgs))
+                         tool_names=_round_tool_names(out, prev_msgs),
+                         latency_ms=latency_ms)
     resp["role"] = session.get("workspace_mode") or "operations"
     resp["store_id"] = session.get("store_id", 1)
     return {"response": resp, "state": out}
