@@ -1,0 +1,62 @@
+{
+  "legacy": {
+    "run_success": "18/22",
+    "coverage": "22/26",
+    "run_rate": 0.8182,
+    "failures": [
+      {
+        "id": "SC-CS08-001",
+        "err": "legacy crash: TypeError"
+      },
+      {
+        "id": "SC-CS08-002",
+        "err": "legacy crash: TypeError"
+      },
+      {
+        "id": "SC-CS08-003",
+        "err": "legacy crash: TypeError"
+      },
+      {
+        "id": "SC-CS08-006",
+        "detail": {
+          "status": "already_exists",
+          "approval_required": null
+        },
+        "status": "completed"
+      },
+      {
+        "id": "SC-OP05-001",
+        "detail": {
+          "status": null
+        },
+        "status": "waiting_user_input"
+      },
+      {
+        "id": "SC-OP05-002",
+        "detail": {
+          "status": null
+        },
+        "status": "completed"
+      },
+      {
+        "id": "SC-OP05-004",
+        "detail": {
+          "status": null
+        },
+        "status": "waiting_user_input"
+      },
+      {
+        "id": "SC-ISO-001",
+        "err": "legacy crash: TypeError"
+      }
+    ]
+  },
+  "react": {
+    "task_success": "78/78",
+    "coverage": "26/26",
+    "multi_tool": "measured(M1)",
+    "multi_hop": "36/36",
+    "source_report": "cd5ed7c"
+  },
+  "note": "legacy 结构性不支持 multi-tool / conditional multi-hop（1 intent/轮），标 N/A；ReAct 侧取自最新 reports/eval_metrics_*.json"
+}

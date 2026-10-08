@@ -6,6 +6,7 @@ M2 的 per-workflow 业务结果谓词见 predicates.py。
 from __future__ import annotations
 
 import json
+import re
 
 # 全部业务工具（10 直连 + 2 workflow）+ request_capability meta
 BUSINESS_TOOLS = {
@@ -15,6 +16,14 @@ BUSINESS_TOOLS = {
     "cs08_return_workflow", "op05_restock_workflow",
 }
 META_TOOL = "request_capability"
+
+
+_NUM_RE = re.compile(r"-?\d+(?:\.\d+)?")
+
+
+def _numbers_in(text: str) -> list[float]:
+    """提取文本中的数字 token（整数/小数），用于 int/float 事实的精确值比对。"""
+    return [float(m) for m in _NUM_RE.findall(text or "")]
 
 
 def extract_trace(messages) -> list:
@@ -48,10 +57,16 @@ def extract_trace(messages) -> list:
 
 
 def check_facts(text: str, required: dict | None, forbidden: dict | None = None) -> bool:
-    """required_facts 结构化匹配（eval_g5 GOLD_KWS 同款，不上 LLM-judge）。
+    """required_facts 结构化匹配（v2：值感知，不上 LLM-judge）。
 
-    required = {label: expected_value}：文本须包含 label 与 value 的关键信息
-    （宽松：label 出现即可，值做子串/枚举匹配；value 为 str 时子串匹配）。
+    required = {label: expected_value}：
+    - value None：label 出现即可（关键词保真；值由业务结果谓词判定）
+    - value bool：True → label 出现；False → label 不得出现（保守：答案不含正向断言；
+      负向措辞若复用正向 label（如"无缺货风险"）会误判失败——bool 事实的 label 应由
+      gold 作者按答案实际措辞设计，或用 str 值承载负向措辞）
+    - value int/float：label 出现 且 期望值须出现在文本数字 token 中（精确匹配，非子串）
+    - value str：label 与 value 均出现（子串，大小写不敏感）
+    **值感知事实的 label 应为答案中会出现的关键词（非字段名）**。
     forbidden = {label: bad_value}：文本含 bad_value 即失败。
     """
     text = text or ""
@@ -62,11 +77,15 @@ def check_facts(text: str, required: dict | None, forbidden: dict | None = None)
                 if label not in text:
                     return False
             elif isinstance(value, bool):
-                # 布尔事实：label 出现即视为支持（值由结论层别的谓词判定）
-                if label not in text:
+                if value:
+                    if label not in text:
+                        return False
+                elif label in text:
                     return False
             elif isinstance(value, (int, float)):
                 if label not in text:
+                    return False
+                if not any(abs(float(v) - float(value)) < 1e-6 for v in _numbers_in(text)):
                     return False
             else:
                 if label not in text or str(value).lower() not in text.lower():
@@ -174,20 +193,21 @@ def judge_m3_trace(trace, response: dict, gold: dict) -> bool:
 # ---- M4 RAG Retrieval（§3.4，Retriever 级）----
 
 def judge_m4_retrieval(results: list, gold: dict) -> dict:
-    """results = search_knowledge top-k（含 title）。gold 见 rag_gold.yaml。
+    """M4 检索判定（v2：doc 级 document_id，消除标题字符串歧义）。gold 见 rag_gold.yaml。
 
-    answerable：返回 {hit5, mrr}（chunk→doc 级：top5 命中任一 acceptable_docs）；
+    answerable：返回 {hit5, mrr}（top5 命中任一 acceptable_doc_ids；
+      acceptable_docs（标题）仅作可读性，判定以 id 为准）；
     unanswerable：返回 {abstain_ok}（空证据 = 正确拒答，Retrieval 级）。
     conflict：不进 Hit/MRR，由 runner 单独判 RULE_CONFLICT。
     """
-    docs = set(gold.get("acceptable_docs") or [])
+    doc_ids = set(gold.get("acceptable_doc_ids") or [])
     if gold.get("answerable") is False:
         return {"abstain_ok": len(results) == 0}
-    top5 = [r["title"] for r in results[:5]]
-    hit = bool(docs & set(top5))
+    top5_ids = [r.get("document_id") for r in results[:5]]
+    hit = bool(doc_ids & set(top5_ids))
     mrr = 0.0
     for i, r in enumerate(results[:10]):
-        if r["title"] in docs:
+        if r.get("document_id") in doc_ids:
             mrr = 1.0 / (i + 1)
             break
     return {"hit5": hit, "mrr": mrr}

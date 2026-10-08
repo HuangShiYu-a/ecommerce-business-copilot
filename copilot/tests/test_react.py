@@ -141,9 +141,10 @@ def test_resolve_text_capability_confirm():
     g = build_react_graph(model=fake, mode="UNSET")
     sess = _session("UNSET", "sc")
     run_agent_react(g, "tc1", sess, "SKU_01_STOCKOUT_01 缺货风险怎么样")   # pending
-    nsess, resume, replay = resolve_text_action(g, "tc1", sess, "切换")
+    nsess, resume, replay, pend = resolve_text_action(g, "tc1", sess, "切换")
     assert nsess["workspace_mode"] == "OPERATIONS"
     assert resume is None and replay is True
+    assert pend is None
 
 
 def test_resolve_text_approval_confirm_reject():
@@ -154,11 +155,11 @@ def test_resolve_text_approval_confirm_reject():
     g = build_react_graph(model=fake, mode="CUSTOMER_SERVICE")
     sess = _session("CUSTOMER_SERVICE", "sa")
     run_agent_react(g, "ta1", sess, "ORD_01_000438 申请退货")    # interrupt → approval_required
-    _, r1, _ = resolve_text_action(g, "ta1", sess, "确认")
+    _, r1, _, _ = resolve_text_action(g, "ta1", sess, "确认")
     assert r1 == {"decision": "approved"}
-    _, r2, _ = resolve_text_action(g, "ta1", sess, "拒绝")
+    _, r2, _, _ = resolve_text_action(g, "ta1", sess, "拒绝")
     assert r2 == {"decision": "rejected"}
-    _, r3, _ = resolve_text_action(g, "ta1", sess, "看看别的")
+    _, r3, _, _ = resolve_text_action(g, "ta1", sess, "看看别的")
     assert r3 is None
 
 
@@ -195,9 +196,9 @@ def test_resolve_text_approval_negation_rejected():
     g = build_react_graph(model=fake, mode="CUSTOMER_SERVICE")
     sess = _session("CUSTOMER_SERVICE", "sa_neg")
     run_agent_react(g, "ta_neg", sess, "ORD_01_000438 申请退货")    # interrupt → approval_required
-    _, r, _ = resolve_text_action(g, "ta_neg", sess, "不同意")
+    _, r, _, _ = resolve_text_action(g, "ta_neg", sess, "不同意")
     assert r == {"decision": "rejected"}, r
-    _, r2, _ = resolve_text_action(g, "ta_neg", sess, "好的，同意")
+    _, r2, _, _ = resolve_text_action(g, "ta_neg", sess, "好的，同意")
     assert r2 == {"decision": "approved"}, r2
 
 
@@ -420,15 +421,45 @@ def test_run_log_records_capability_and_approval():
 
 
 def test_resolve_text_switch_no_pending_explicit_domain():
-    from copilot.agent.react import build_react_graph, resolve_text_action, run_agent_react
+    """方案 B：无 pending 时"切换到运营模式"→ 置 pending 不直切；确认词才切换。"""
+    from copilot.agent.react import (build_react_graph, read_capability_pending,
+                                     resolve_text_action, run_agent_react)
     # 模型只文字解释、不调 request_capability → 无 pending
     fake = _fake(AIMessage(content="当前没有销售分析工具，需要切换到运营能力域。"))
     g = build_react_graph(model=fake, mode="UNSET")
     sess = _session("UNSET", "s_ds")
     run_agent_react(g, "tds", sess, "我想查一下store1最近7天的销售情况")
-    nsess, resume, replay = resolve_text_action(g, "tds", sess, "切换到运营模式")
-    assert nsess["workspace_mode"] == "OPERATIONS"
-    assert resume is None and replay is True
+    # 第一步：切换请求 → 置 pending，不直切
+    nsess, resume, replay, pend = resolve_text_action(g, "tds", sess, "切换到运营模式")
+    assert nsess["workspace_mode"] == "UNSET", "第一步不得立即切换"
+    assert resume is None and replay is False
+    assert pend is not None and pend["domain"] == "OPERATIONS"
+    assert pend["original_message"] == "我想查一下store1最近7天的销售情况"   # 需要该能力的原问题
+    assert read_capability_pending(g, "tds")["domain"] == "OPERATIONS"
+    # 第二步：确认词 → 才切换 + 重跑
+    nsess2, resume2, replay2, pend2 = resolve_text_action(g, "tds", sess, "确认")
+    assert nsess2["workspace_mode"] == "OPERATIONS"
+    assert resume2 is None and replay2 is True and pend2 is None
+
+
+def test_resolve_text_switch_pending_different_domain_overwrites():
+    """方案 B：pending 存在时，新域切换命令覆盖旧 pending；同域重复命令 = 确认。"""
+    from copilot.agent.react import (build_react_graph, read_capability_pending,
+                                     resolve_text_action, run_agent_react)
+    fake = _fake(AIMessage(content="当前没有销售分析工具，需要切换到运营能力域。"))
+    g = build_react_graph(model=fake, mode="UNSET")
+    sess = _session("UNSET", "s_ds2")
+    run_agent_react(g, "tds2", sess, "我想查一下store1最近7天的销售情况")
+    _, _, _, p1 = resolve_text_action(g, "tds2", sess, "切换到运营模式")
+    assert p1["domain"] == "OPERATIONS"
+    # 用户改主意 → 新域覆盖旧 pending（不得按旧 pending 切）
+    _, _, _, p2 = resolve_text_action(g, "tds2", sess, "切换到客服模式")
+    assert p2["domain"] == "CUSTOMER_SERVICE"
+    assert read_capability_pending(g, "tds2")["domain"] == "CUSTOMER_SERVICE"
+    # 同域重复命令 = 对当前 pending 的确认
+    nsess, _, replay, pend = resolve_text_action(g, "tds2", sess, "切换到客服模式")
+    assert nsess["workspace_mode"] == "CUSTOMER_SERVICE"
+    assert replay is True and pend is None
 
 
 # ---- F7：ReAct 直连工具跨店读放开（ISO 方向 A，source_store 标注）----

@@ -170,10 +170,10 @@ def test_m3_single_hop_and_parallel():
 # ---- M4 RAG Retrieval ----
 
 def test_m4_hit5_and_mrr():
-    gold = {"answerable": True, "acceptable_docs": ["七日无理由退货底线"]}
-    r = judge_m4_retrieval([{"title": "A"}, {"title": "七日无理由退货底线"}], gold)
+    gold = {"answerable": True, "acceptable_doc_ids": [1]}
+    r = judge_m4_retrieval([{"document_id": 2}, {"document_id": 1}], gold)
     assert r["hit5"] is True and r["mrr"] == 0.5
-    r2 = judge_m4_retrieval([{"title": "A"}, {"title": "B"}], gold)
+    r2 = judge_m4_retrieval([{"document_id": 2}, {"document_id": 3}], gold)
     assert r2["hit5"] is False and r2["mrr"] == 0.0
 
 
@@ -210,3 +210,21 @@ def test_check_facts_required_and_forbidden():
     assert check_facts("退货窗口为 15 日", {"退货窗口": "7"}, {"退货窗口": "15"}) is False
     assert check_facts("该商品缺货风险等级为高", {"缺货风险": "高"}) is True
     assert check_facts("该商品缺货风险为低", {"缺货风险": "高"}) is False
+
+
+def test_check_facts_value_aware():
+    """check_facts v2：int/float 精确值比对（数字 token，非子串）、bool 语义。"""
+    # int：期望值须出现在文本数字 token 中
+    assert check_facts("建议补货 5 件", {"补货": 5}) is True
+    assert check_facts("建议补货 15 件", {"补货": 5}) is False
+    assert check_facts("库存 3 件", {"库存": 3}) is True
+    assert check_facts("库存 30 件", {"库存": 3}) is False     # "30" 含 "3" 但 token 为 30
+    # float
+    assert check_facts("drop 0.25", {"drop": 0.25}) is True
+    assert check_facts("drop 0.5", {"drop": 0.25}) is False
+    # bool True：label 出现（正向断言）
+    assert check_facts("该商品有缺货风险", {"缺货风险": True}) is True
+    assert check_facts("该商品无风险", {"缺货风险": True}) is False
+    # bool False：label 不得出现（保守：答案不含正向断言）
+    assert check_facts("商品不支持退货", {"可以退货": False}) is True
+    assert check_facts("商品可以退货", {"可以退货": False}) is False

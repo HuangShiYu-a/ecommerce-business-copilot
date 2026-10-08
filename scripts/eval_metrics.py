@@ -56,7 +56,11 @@ def _live(repeat: int, out: str | None, only: str | None) -> int:
         rep["m2"] = run_live_m2(factory, repeat)
     if only in (None, "rag"):
         rep["m4"] = run_offline_m4()
-    for k in ("m1", "m3", "m2", "m4"):
+    if only in (None, "safety"):
+        # P2-5：接线结构性安全测试（M6 Source A：fake LLM 强制越权/审批，离线确定性）
+        from copilot.eval.safety_scenarios import run_structural_safety
+        rep["m6"] = run_structural_safety()
+    for k in ("m1", "m3", "m2", "m4", "m6"):
         if k in rep:
             print(f"[{k}] {rep[k]}")
     if out:

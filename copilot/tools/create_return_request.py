@@ -62,6 +62,8 @@ class CreateReturnRequest(Tool):
                          (item_id, ctx.store_id))
         if item is None:
             return err(NOT_FOUND, "订单明细不存在")
+        if int(item["order_id"]) != int(order_id):
+            return err(INVALID_INPUT, "明细行不属于该订单")
 
         # 幂等：同一 request_id 已存在 → 返回已有单（须在可退数量校验前，重复提交返回原单）
         dup = query_one(self.conn, "SELECT * FROM after_sales_requests WHERE store_id=%s AND idempotency_key=%s",
@@ -84,7 +86,12 @@ class CreateReturnRequest(Tool):
             # M5：建单竞态加固——事务内锁表，串行化并发建单，防 MAX(id)+1 撞主键
             cur.execute("LOCK TABLE after_sales_requests IN SHARE ROW EXCLUSIVE MODE")
         next_id = query_one(self.conn, "SELECT COALESCE(MAX(id),0)+1 AS n FROM after_sales_requests")["n"]
+        # P2-2：audit_logs 独立 ID 空间（不复用 next_id+1，避免与业务表共空间撞键；锁内安全）
+        audit_id = query_one(self.conn, "SELECT COALESCE(MAX(id),0)+1 AS n FROM audit_logs")["n"]
         request_no = f"ASR{ctx.store_id:02d}{next_id:09d}"
+        # 审计双字段语义（P0-1）：requested_by/actor_id = 发起者（ctx.user_id，resume 时取服务端
+        # 会话 owner = 发起者，自批设计下与批准者相同）；approver_id = 批准者（approval 元数据）。
+        # 会话凭证（session_token）+ 服务端 user 锁定保证只有发起者可批准，双字段含义成立。
         with self.conn.cursor() as cur:
             cur.execute("""
                 INSERT INTO after_sales_requests
@@ -101,7 +108,7 @@ class CreateReturnRequest(Tool):
                     resource_type, resource_id, payload, result, request_id, created_at)
                 VALUES (%s,%s,%s,%s,'CREATE_RETURN_REQUEST','after_sales_requests',%s,
                         %s::jsonb,'SUCCESS',%s,%s)
-            """, (next_id + 1, ctx.store_id, ctx.user_id, int(approval["approver_id"]),
+            """, (audit_id, ctx.store_id, ctx.user_id, int(approval["approver_id"]),
                   next_id, '{"quantity":%d,"order_id":%d}' % (int(quantity), order_id),
                   request_id, AS_OF_DATE))
         self.conn.commit()

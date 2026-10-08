@@ -1,0 +1,52 @@
+{
+  "metadata": {
+    "model": "deepseek-chat",
+    "temperature": 0,
+    "prompt_version": "react.py system prompt (V1.5.3+)",
+    "tool_schema_version": "v1",
+    "dataset_version": "v1.2.3",
+    "git_commit": "cd5ed7c",
+    "as_of_date": "2026-09-17",
+    "timestamp": "2026-10-08T21:22:10",
+    "runs_per_case": 3,
+    "embedding_model": "bge-m3",
+    "retrieval_config_version": "v1",
+    "world": "dev"
+  },
+  "m1": {
+    "run_success": "135/135",
+    "run_rate": 1.0,
+    "case_stable": "45/45",
+    "n": 135,
+    "latency_ms": {
+      "p50": 2028,
+      "p95": 4342
+    }
+  },
+  "m3": {
+    "run_success": "36/36",
+    "run_rate": 1.0,
+    "case_stable": "12/12",
+    "n": 36,
+    "latency_ms": {
+      "p50": 2485,
+      "p95": 4812
+    }
+  },
+  "m2": {
+    "run_success": "78/78",
+    "run_rate": 1.0,
+    "case_stable": "26/26",
+    "n": 78,
+    "latency_ms": {
+      "p50": 2219,
+      "p95": 4125
+    }
+  },
+  "m4": {
+    "hit5": "22/22",
+    "mrr": 0.8333333333333335,
+    "abstention": "6/6",
+    "conflict": "2/2"
+  }
+}

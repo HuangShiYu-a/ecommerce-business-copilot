@@ -20,17 +20,21 @@ docker-compose up -d
 docker-compose down
 docker-compose down -v
 
-# 应用 DDL（建表，幂等）
+# 应用 DDL（建表，幂等；schema.sql = public+knowledge；runtime_schema.sql = runtime 会话/记忆/日志）
 docker exec -i ec-copilot-pg psql -U ec -d ec_copilot -v ON_ERROR_STOP=1 < db/schema.sql
+docker exec -i ec-copilot-pg psql -U ec -d ec_copilot -v ON_ERROR_STOP=1 < db/runtime_schema.sql
 
-# 导入 canonical（默认先 TRUNCATE 再导）
+# 导入 canonical（默认先 TRUNCATE 再导；dev 与 eval 互斥，二选一——测试与评测基于 dev）
 python db/import_data.py --profile dev
-python db/import_data.py --profile eval
+# python db/import_data.py --profile eval   # 受控切片（会覆盖 dev，二选一）
+
+# 知识向量填充（需 Ollama bge-m3 运行，http://localhost:11434）
+python db/embed_knowledge.py
 ```
 
 ## 约定
 
-- 24 张表（public 业务 22 + knowledge 知识 2），DB §13 列级一致；id 显式（canonical 提供）
+- public 26 + knowledge 2 + runtime 3 张表（schema.sql / runtime_schema.sql）；id 显式（canonical 提供）
 - 空串 → NULL；created_at/updated_at 走 DB 默认；JSONB 由文本隐式转
-- `knowledge.knowledge_chunks.embedding` 为 vector(1536) **stub**（S3.5 未生成，导入留 NULL，S4 后续补）
+- `knowledge.knowledge_chunks.embedding` 为 vector(1024)（bge-m3，R3/Q1 定案），由 `db/embed_knowledge.py` 填充
 - `inventory_movements` / `service_tickets` / `audit_logs` 建表但不导入（策略 B / 运行时产物）

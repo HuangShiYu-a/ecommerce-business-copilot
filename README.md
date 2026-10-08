@@ -19,13 +19,23 @@ Python / LangGraph（自建 StateGraph ReAct 循环）/ DeepSeek / PostgreSQL + 
 ⑤ Eval/Observability  本仓库评测体系（下）
 ```
 
+## V1 Demo 安全边界（诚实声明）
+
+单用户 Demo，**无真实认证 / RBAC**（生产形态由 **Auth / RBAC 在 Agent 外部**完成硬过滤，LLM 无法改变能力边界）：
+
+- 会话创建（首轮）由客户端声明 `store_id` / `user_id` 并**服务端锁定**（`runtime.session` 持会话凭证 `session_token`）；
+- 审批确认 / 能力切换需持有该会话凭证（proof of possession，**非认证**）；
+- 能力切换（Workspace Mode）为「请求 → 用户确认」两步，LLM 只建议不授权；
+- 跨店读放开并标注 `source_store`，跨店写 FORBIDDEN。
+
 ## 评测（四层）
 
-> 可复现：DeepSeek-chat / temperature=0 / as_of=2026-09-17 / 数据集 v1.2.3 / live repeat=3 取均值。
+> 可复现：DeepSeek-chat / temperature=0 / as_of=2026-09-17 / 数据集 v1.2.3 / world=dev / live repeat=3 取均值。
 > 判定函数纯函数化 + fake LLM 离线 100% 验证后再上 live。
+> 数字均出自提交报告 `reports/eval_metrics_20261008_212207.json`（M1~M5）与 `reports/m8_20261008_213542.json`（M8），以当前 HEAD 实测为准。
 
 ### Correctness — 功能正确性
-- **204 项自动化测试通过**（确定性断言 + SC 26 业务场景 + M6 结构性安全）
+- **212 项自动化测试通过**（当前 HEAD 实测；确定性断言 + SC 26 业务场景 + M6 结构性安全）
 - SC 26 条 data 场景确定性全过；G2/G3/G5/G6 live 场景验证
 
 ### Effectiveness — 效果
@@ -41,9 +51,9 @@ Python / LangGraph（自建 StateGraph ReAct 循环）/ DeepSeek / PostgreSQL + 
 ### Performance — 性能（M5，池化样本）
 | Workload | P50 | P95 |
 |---|---|---|
-| 工具调用（M1） | 2.0s | 4.6s |
-| 任务完成（M2） | 2.1s | 4.1s |
-| 条件多跳（M3） | 2.4s | 4.4s |
+| 工具调用（M1） | 2.0s | 4.3s |
+| 任务完成（M2） | 2.2s | 4.1s |
+| 条件多跳（M3） | 2.5s | 4.8s |
 
 ### Safety — 安全（M6，结构性 + 测试证据）
 - **Unauthorized Execution Rate = 0%**（runtime 对目录外工具强制拦截）
@@ -61,7 +71,22 @@ Python / LangGraph（自建 StateGraph ReAct 循环）/ DeepSeek / PostgreSQL + 
 ## 快速开始
 
 ```bash
-docker-compose -f db/docker-compose.yml up -d        # PG + pgvector
-C:/Users/HSY20/.conda/envs/ecommerce-agent/python.exe -m web.main   # NiceGUI 界面 http://127.0.0.1:8000
-C:/Users/HSY20/.conda/envs/ecommerce-agent/python.exe scripts/eval_metrics.py --mode offline  # 评测
+# 1) 起 PG + pgvector（宿主 5434）
+docker-compose -f db/docker-compose.yml up -d
+
+# 2) 建表（两份 DDL）+ 导入 dev 数据 + 知识向量（需 Ollama bge-m3 运行，localhost:11434）
+docker exec -i ec-copilot-pg psql -U ec -d ec_copilot -v ON_ERROR_STOP=1 < db/schema.sql
+docker exec -i ec-copilot-pg psql -U ec -d ec_copilot -v ON_ERROR_STOP=1 < db/runtime_schema.sql
+python db/import_data.py --profile dev
+python db/embed_knowledge.py
+
+# 3) 起界面（二选一）
+python -m web.main                        # NiceGUI 工作台 http://127.0.0.1:8000
+python -m copilot.api.app                 # FastAPI + 静态页 http://127.0.0.1:8000
+
+# 4) 测试与评测
+python -m pytest                          # 212 项（当前 HEAD 实测）
+python scripts/eval_metrics.py --mode offline       # 离线 Phase A（fake 自洽 100%）
+python scripts/eval_metrics.py --mode live --repeat 3 --out reports/eval_metrics_<ts>.json
+python scripts/eval_metrics.py --mode baseline      # M8 legacy vs ReAct
 ```

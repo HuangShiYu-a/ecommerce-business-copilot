@@ -20,11 +20,15 @@ def is_legacy() -> bool:
 
 def list_sessions(user_id: int) -> list[dict]:
     """runtime.session 按 updated_at 倒序；含徽章字段（role/store，role 即 workspace_mode）。"""
-    return query(connect(), """
-        SELECT session_id, title, role, store_id, status, updated_at
-        FROM runtime.session
-        WHERE user_id=%s AND status='active'
-        ORDER BY updated_at DESC""", (user_id,))
+    conn = connect()
+    try:
+        return query(conn, """
+            SELECT session_id, title, role, store_id, status, updated_at
+            FROM runtime.session
+            WHERE user_id=%s AND status='active'
+            ORDER BY updated_at DESC""", (user_id,))
+    finally:
+        conn.close()   # P1-4：修复连接泄漏（此前 query(connect(), ...) 不 close）
 
 
 def new_session() -> str:
@@ -70,10 +74,31 @@ def send(runtime, thread_id: str, session: dict, message: str,
         else:
             # P1：文本动作解析（能力切换 / 审批确认，用户打字而非点按钮）
             if resume is None and not capability_replay and message:
-                from copilot.agent.react import resolve_text_action
-                session, resume, capability_replay = resolve_text_action(
+                from copilot.agent.react import _MODE_LABEL, resolve_text_action
+                session, resume, capability_replay, new_pending = resolve_text_action(
                     runtime.get(session.get("workspace_mode") or "UNSET"),
                     thread_id, session, message)
+                if new_pending:
+                    # 会话一致性（option b+ ⑥）：web 路径同样经 runtime/store 落库（含 token），
+                    # 覆盖"首轮即切换命令"的极端场景（该轮不调 run_agent_react，_persist_session 不执行）
+                    from copilot.runtime.store import create_session
+                    create_session(session.get("session_id"), thread_id,
+                                   int(session.get("user_id") or 1),
+                                   session.get("workspace_mode") or "UNSET",
+                                   int(session.get("store_id") or 1))
+                    # 方案 B：切换请求已置 pending → 返回 capability_required 风格响应（不调图）
+                    label = _MODE_LABEL.get(new_pending["domain"], new_pending["domain"])
+                    return {
+                        "message": f"已申请切换到{label}模式，请确认（回复「确认」或点击切换）。",
+                        "status": "capability_required",
+                        "needs_user_input": True,
+                        "approval_required": False,
+                        "capability_required": True,
+                        "capability_pending": new_pending,
+                        "result": {"capability_pending": new_pending},
+                        "role": session.get("workspace_mode") or None,
+                        "store_id": session.get("store_id"),
+                    }
             graph = runtime.get(session.get("workspace_mode") or "UNSET")
             out = run_agent_react(graph, thread_id, session, message,
                                   capability_replay=capability_replay, resume=resume)

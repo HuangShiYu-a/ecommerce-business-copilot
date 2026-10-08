@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 
 import requests
@@ -15,7 +16,7 @@ import requests
 from .config import AS_OF_DATE
 from .db import query
 
-OLLAMA_URL = "http://localhost:11434/api/embed"
+OLLAMA_URL = os.getenv("OLLAMA_URL", "http://localhost:11434/api/embed")
 EMBED_MODEL = "bge-m3"
 LAYER_PRIORITY = {"legal": 3, "platform": 2, "store": 1}
 

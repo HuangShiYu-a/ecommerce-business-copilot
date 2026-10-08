@@ -35,6 +35,7 @@ def metadata() -> dict:
         "timestamp": time.strftime("%Y-%m-%dT%H:%M:%S"),
         "runs_per_case": 3, "embedding_model": "bge-m3",
         "retrieval_config_version": "v1",
+        "world": "dev",   # D-1：评测跑在 dev 世界导入的库（dev/eval 互斥，二选一；复现基准）
     }
 
 

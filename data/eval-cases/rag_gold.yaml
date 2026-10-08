@@ -1,13 +1,15 @@
 # RAG 黄金问答（M4）— 全量 30 条
 #
-# schema 约定（对齐 evaluation-plan-v1.md §2.3 / §3.4，doc 级 acceptable_docs）：
-#   id              rg-xxx
-#   query           检索问题
-#   store_id        门店（1）
-#   answerable      true（知识库可答）/ false（域外，测拒答）
-#   acceptable_docs [黄金文档标题] —— 允许多个合法证据（doc 级；相关性按 chunk 所属 doc 判定）
-#   scope           （可选）业务上下文过滤（如 conflict 用例的 tags）
-#   expect          （可选）RULE_CONFLICT —— 单列，不进 Hit@5/MRR 分母
+# schema 约定（对齐 evaluation-plan-v1.md §2.3 / §3.4，doc 级判定）：
+#   id                  rg-xxx
+#   query               检索问题
+#   store_id            门店（1）
+#   answerable          true（知识库可答）/ false（域外，测拒答）
+#   acceptable_doc_ids  [黄金文档 id] —— **判定依据**（doc 级；相关性按 chunk 所属 document_id 判定，
+#                       消除标题字符串歧义；id 对应 knowledge.knowledge_documents.id，dev 世界稳定）
+#   acceptable_docs     [黄金文档标题] —— 仅供可读性/调试，不参与判定
+#   scope               （可选）业务上下文过滤（如 conflict 用例的 tags）
+#   expect              （可选）RULE_CONFLICT —— 单列，不进 Hit@5/MRR 分母
 #
 # 判定（§3.4）：
 #   Hit@5 = top-5 chunk 中出现 ≥1 个 acceptable document / answerable 条数
@@ -15,6 +17,9 @@
 #   Correct/False Abstention = Retrieval 级（search_knowledge 是否空证据）
 #   unanswerable 用例为「明显域外」问题（实测 bge-m3 下返回空，见阶段1 A3）
 # 分布：22 answerable + 2 RULE_CONFLICT + 6 unanswerable = 30
+#
+# 迁移记录（V1.2 → doc_id）：acceptable_docs 标题判定 → acceptable_doc_ids id 判定
+# （P2-7b）；读者仅 runner.run_offline_m4；冻结副本 rag_gold_v1.yaml 不动。
 
 cases:
   # ================= answerable =================
@@ -22,132 +27,154 @@ cases:
     query: "无理由退货窗口几天"
     store_id: 1
     answerable: true
+    acceptable_doc_ids: [1]
     acceptable_docs: [七日无理由退货底线]
 
   - id: rg-002
     query: "耳机可以退货吗"
     store_id: 1
     answerable: true
+    acceptable_doc_ids: [4]
     acceptable_docs: [店铺补充售后政策（STORE_01）]
 
   - id: rg-003
     query: "物流时效承诺政策"
     store_id: 1
     answerable: true
+    acceptable_doc_ids: [15]
     acceptable_docs: [物流时效承诺政策 v2.0（现行）]
 
   - id: rg-005
     query: "服装贴身衣物可以退货吗"
     store_id: 1
     answerable: true
+    acceptable_doc_ids: [2]
     acceptable_docs: [例外商品/不可退类目]
 
   - id: rg-006
     query: "滞销商品怎么处理"
     store_id: 1
     answerable: true
+    acceptable_doc_ids: [12]
     acceptable_docs: [滞销商品处理规则]
 
   - id: rg-007
     query: "物流异常延误怎么办"
     store_id: 1
     answerable: true
+    acceptable_doc_ids: [18]
     acceptable_docs: [物流异常处理 SOP]
 
   - id: rg-008
     query: "库存怎么管理"
     store_id: 1
     answerable: true
+    acceptable_doc_ids: [16]
     acceptable_docs: [库存管理政策]
 
   - id: rg-009
     query: "退货需要什么凭证"
     store_id: 1
     answerable: true
+    acceptable_doc_ids: [3]
     acceptable_docs: [完好要求与凭证]
 
   - id: rg-010
     query: "赠品要不要一起退回"
     store_id: 1
     answerable: true
+    acceptable_doc_ids: [5]
     acceptable_docs: [特殊售后场景处理（赠品/套装/优惠分摊）]
 
   - id: rg-011
     query: "退货退款整体流程是什么"
     store_id: 1
     answerable: true
+    acceptable_doc_ids: [13]
     acceptable_docs: [退货退款政策总则]
 
   - id: rg-012
     query: "发货时效是多久"
     store_id: 1
     answerable: true
+    acceptable_doc_ids: [10]
     acceptable_docs: [发货时效与物流异常处理]
 
   - id: rg-013
     query: "安全库存和再订货点怎么定"
     store_id: 1
     answerable: true
+    acceptable_doc_ids: [9]
     acceptable_docs: [库存/备货文字政策]
 
   - id: rg-014
     query: "商品健康度包含哪些维度"
     store_id: 1
     answerable: true
+    acceptable_doc_ids: [11]
     acceptable_docs: [健康维度说明与类目例外]
 
   - id: rg-015
     query: "售后问题的一般处理流程"
     store_id: 1
     answerable: true
+    acceptable_doc_ids: [17]
     acceptable_docs: [售后处理 SOP]
 
   - id: rg-016
     query: "退款审核流程是什么"
     store_id: 1
     answerable: true
+    acceptable_doc_ids: [20]
     acceptable_docs: [退款审核 SOP]
 
   - id: rg-017
     query: "客服回复用户用什么话术"
     store_id: 1
     answerable: true
+    acceptable_doc_ids: [21]
     acceptable_docs: [客服话术手册]
 
   - id: rg-018
     query: "售后工单怎么创建和流转"
     store_id: 1
     answerable: true
+    acceptable_doc_ids: [22]
     acceptable_docs: [工单操作手册]
 
   - id: rg-019
     query: "运营巡检都检查什么"
     store_id: 1
     answerable: true
+    acceptable_doc_ids: [19]
     acceptable_docs: [运营巡检 SOP]
 
   - id: rg-020
     query: "售后质检评分标准"
     store_id: 1
     answerable: true
+    acceptable_doc_ids: [23]
     acceptable_docs: [售后质检培训]
 
   - id: rg-021
     query: "退货申请时限是多久"
     store_id: 1
     answerable: true
+    acceptable_doc_ids: [1]
     acceptable_docs: [七日无理由退货底线]
 
   - id: rg-022
     query: "电子产品退货有什么限制"
     store_id: 1
     answerable: true
+    acceptable_doc_ids: [2, 4]
     acceptable_docs: [例外商品/不可退类目, 店铺补充售后政策（STORE_01）]
 
   - id: rg-023
     query: "耳机拆封了还能退吗"
     store_id: 1
     answerable: true
+    acceptable_doc_ids: [3, 2]
     acceptable_docs: [完好要求与凭证, 例外商品/不可退类目]
 
   # ================= RULE_CONFLICT（单列，不进 Hit@5/MRR 分母）=================

@@ -39,7 +39,7 @@
 | B2 | **业务分支只看结构化 State**，禁止「LLM 感觉」作分支 | Workflow Spec R5 |
 | B3 | **Action 在确认/审批之后**，禁止 LLM 直写 | Workflow Spec R10 |
 | B4 | 角色 / store / permission 一律来自 **Trusted UserContext**（服务端构造），不由 LLM 或用户文本决定 | 本 Spec §4 |
-| B5 | 跨 store 读取一律 FORBIDDEN（工具层隔离不变） | Database / Tool Contract |
+| B5 | 跨 store 读放开 + `source_store` 标注；写仅限当前会话门店（方向 A，D7） | Database / Tool Contract + 方案 B D7 |
 
 ### 1.3 项目边界（不进入范围）
 
@@ -199,7 +199,7 @@ WorkflowResult：
 - 角色 → 工具范围映射（初版，随业务扩展）：
   - **客服**：T-Q-01~07（查询）、T-A-09（退货资格）、T-X-01（退货申请）、T-X-02（工单）
   - **运营**：T-Q-03、T-A-02/04/05/06/07（分析）、T-R-01（补货建议）
-- store_id 是**独立隔离维度**，不由角色自动带；工具层强制（Database store 隔离不变，B5）。
+- store_id 是**独立数据范围维度**，不由角色自动带；会话建立时绑定（首轮客户端声明，option b+），跨店读放开并标注 source_store、跨店写 FORBIDDEN（方向 A / D7，B5）。
 
 ### 4.3 身份注入：Trusted UserContext（非真实认证）
 
@@ -665,3 +665,4 @@ input → intent → slot → clarification → workflow → tool → tool_args
 |------|------|------|
 | V0.1 | 2026-09-19 | 首版起草：意图路由式 Runtime（§8 Intent Registry、§9.2 非 interrupt HITL）|
 | V0.2 | 2026-09-23 | **架构演进标注**：方案 B（ReAct 工具调用式）已落地，§8/§9.2 被取代；新契约见 `react.py` 与 `docs/agent-plan-b-react-v1.md`；意图路由保留为 `AGENT_BACKEND=legacy` 回退 |
+| V0.3 | 2026-10-08 | **B5 语义同步（P5）**：跨 store 读取放开 + source_store 标注、写仅限本店（方向 A / D7），对齐实际实现；store 表述改为"会话绑定（首轮声明）+ 数据范围" |

@@ -343,4 +343,4 @@ AI 必须：
 2. **改共享文件前对齐**：动 `react.py` / `sc_runner.py` / `data/scenarios/eval/scenarios.yaml` / `scripts/eval_*.py` 等两窗口共用文件前，先 `git status` 确认无对方未提交改动。
 3. **语义变更先通报**：业务语义变更（如 CS-08 already_exists / H2 在途超期 / M1 慢销口径）须先在跨窗口协调文档 `docs/coordination-fix-eval-alignment-v1.md` 通报，再改评估假设 / 冻结文档。
 4. **冻结文件双方不碰**：`data/scenarios/eval/scenarios.yaml`、`data/eval-cases/rag_gold_v1.yaml` 任何窗口都不改。
-5. **数字口径动态化**：报告 / 简历里的测试计数写「当前 HEAD 的 pytest 实数」，不硬编码（当前 175）。
+5. **数字口径动态化**：报告 / 简历里的测试计数写「当前 HEAD 的 pytest 实数」，不硬编码（当前 212）。

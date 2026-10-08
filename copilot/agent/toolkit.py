@@ -217,6 +217,7 @@ def make_cs08_workflow_tool(ctx_provider: Callable[[], UserContext]) -> Structur
                 "type": "approval", "workflow": "CS-08", "order_no": order_no,
                 "order_id": order["id"], "item_id": item["id"],
                 "quantity": int(item["quantity"]), "reason": reason or "无理由退货",
+                "operator_user_id": ctx.user_id,   # 发起者（自批设计下 = 批准者；供 UI/审计展示）
                 "message": f"订单 {order_no} 符合退货资格，是否创建退货申请？",
             })
             if not (decision and decision.get("decision") == "approved"):
@@ -280,6 +281,7 @@ def make_op05_workflow_tool(ctx_provider: Callable[[], UserContext]) -> Structur
             decision = interrupt({
                 "type": "approval", "workflow": "OP-05", "sku_code": sku_code,
                 "recommended_quantity": rec,
+                "operator_user_id": ctx.user_id,   # 发起者（自批设计下 = 批准者）
                 "message": f"建议补货 {rec} 件，是否确认执行？",
             })
             if not (decision and decision.get("decision") == "approved"):

@@ -11,6 +11,7 @@ CREATE TABLE IF NOT EXISTS runtime.session (
     user_id     BIGINT NOT NULL REFERENCES public.staff_users(id),
     role        VARCHAR(32) NOT NULL,           -- customer_service | operations
     store_id    BIGINT NOT NULL REFERENCES public.stores(id),
+    session_token TEXT,                         -- 会话凭证（HTTP API 审批/续答校验；web 进程内不强制）
     status      VARCHAR(16) NOT NULL DEFAULT 'active',  -- active | closed
     title       VARCHAR(200),
     created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),

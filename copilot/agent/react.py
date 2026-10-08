@@ -1,4 +1,4 @@
-"""Agent Runtime V2：ReAct 图（Phase 2，并行新模块；legacy orchestrator 仍默认）。
+"""Agent Runtime V2：ReAct 图（默认后端；legacy orchestrator 仅 AGENT_BACKEND=legacy 回退）。
 
 设计（对齐 V1.5.2 W2.1~2.9）：
 - **自定义 StateGraph**（模型节点/工具节点/路由/收尾）：create_react_agent 不便自定义
@@ -16,18 +16,22 @@ from __future__ import annotations
 
 import contextvars
 import json
+import logging
 import re
 import time
 from typing import Annotated, TypedDict
 
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
 from langgraph.checkpoint.memory import InMemorySaver
+from langgraph.errors import GraphInterrupt
 from langgraph.graph import END, START, StateGraph, add_messages
 
 from .. import llm
 from ..context import approval_text_decision, mode_to_role, session_ctx
 from .persona import get_persona
 from .toolkit import build_toolkit, catalog_names
+
+logger = logging.getLogger(__name__)
 
 # ---- ctx：contextvar 注入（Phase 1 ctx_provider 的 Phase 2 实现）----
 
@@ -206,6 +210,15 @@ def read_capability_pending(graph, thread_id: str) -> dict | None:
         return None
 
 
+def _set_capability_pending(graph, thread_id: str, pending: dict) -> None:
+    """把 capability_pending 写入持久化 state（方案 B：文本切换请求 → 置 pending，待二次确认）。"""
+    config = {"configurable": {"thread_id": thread_id}}
+    values = graph.get_state(config).values
+    execution = dict(values.get("execution") or {})
+    execution["capability_pending"] = pending
+    graph.update_state(config, {"execution": execution})
+
+
 # 审批 workflow 工具（用于识别挂起的审批 interrupt）
 _APPROVAL_WORKFLOW_TOOLS = {"cs08_return_workflow", "op05_restock_workflow"}
 
@@ -228,38 +241,64 @@ def resolve_approval_text(graph, thread_id: str, message: str) -> dict | None:
                 d = approval_text_decision(message)
                 if d:
                     return {"decision": d}
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.warning("resolve_approval_text 解析失败，降级为无动作：%s", exc)
     return None
 
 
-def resolve_text_action(graph, thread_id: str, session: dict, message: str) -> tuple[dict, dict | None, bool]:
+def resolve_text_action(graph, thread_id: str, session: dict, message: str
+                        ) -> tuple[dict, dict | None, bool, dict | None]:
     """文本动作解析（P1）：用户打字而非点按钮。
 
-    能力切换：capability_pending + 确认词 → (切到新 mode 的 session, None, capability_replay=True)
-    审批：末尾悬空 workflow tool_call + 确认/拒绝 → (session, resume, False)
-    其余 → (session, None, False)（reject/无关消息：pending 由 run_agent_react 新轮清掉）
+    返回 (session, resume, capability_replay, new_capability_pending)。
+    能力切换（方案 B：请求 → 二次确认，两步）：
+      - 无 pending + 显式域切换命令 → 置 capability_pending，(session, None, False, pending)
+        （不直切；API 层返回 capability_required 风格响应，下一轮用户确认词才切换）
+      - 有 pending + 确认词 / 重复同域切换命令 → (切到 pending 域的 session, None, True, None)
+      - 有 pending + 新域切换命令（≠pending 域）→ 覆盖 pending，(session, None, False, new_pending)
+    审批：末尾悬空 workflow tool_call + 确认/拒绝 → (session, resume, False, None)
+    其余 → (session, None, False, None)（reject/无关消息：pending 由 run_agent_react 新轮清掉）
     """
+    def _prev_user_message() -> str:
+        # 切换请求轮之前的上一条用户消息（即"需要该能力"的原问题，供确认后重跑定位）
+        try:
+            values = graph.get_state({"configurable": {"thread_id": thread_id}}).values
+            return _last_user_content({"messages": values.get("messages") or []})
+        except Exception:
+            return ""
+
     try:
         pending = read_capability_pending(graph, thread_id)
         if pending:
-            from ..context import capability_text_decision, normalize_mode
+            from ..context import capability_domain_switch, capability_text_decision, normalize_mode
+            new_domain = capability_domain_switch(message)
+            if new_domain:
+                cur = normalize_mode(pending.get("domain"))
+                if new_domain == cur:
+                    # 重复同域切换命令 = 对当前 pending 的确认
+                    return {**session, "workspace_mode": cur}, None, True, None
+                # 新域切换命令 → 覆盖旧 pending（防旧 pending 干扰新请求）
+                pend = {"domain": new_domain, "original_message": _prev_user_message() or message}
+                _set_capability_pending(graph, thread_id, pend)
+                return session, None, False, pend
             if capability_text_decision(message) == "confirm":
                 return {**session,
-                        "workspace_mode": normalize_mode(pending.get("domain"))}, None, True
-            return session, None, False
+                        "workspace_mode": normalize_mode(pending.get("domain"))}, None, True, None
+            return session, None, False, None
         d = resolve_approval_text(graph, thread_id, message)
         if d:
-            return session, d, False
-        # F4：无 pending 时的显式域切换兜底——用户直接说"切换到运营/客服模式"，
-        # 无需依赖模型先调 request_capability。无显式域（如"好的，切换"）则返回 None。
+            return session, d, False, None
+        # 方案 B：无 pending 时的显式域切换 → 置 pending（不直切），待用户二次确认。
+        # 此前为"立即切换 + 重跑"，存在一句话自提升缺陷（审查 P0-3）。
         from ..context import capability_domain_switch
         domain = capability_domain_switch(message)
         if domain:
-            return {**session, "workspace_mode": domain}, None, True
-    except Exception:
-        pass
-    return session, None, False
+            pend = {"domain": domain, "original_message": _prev_user_message() or message}
+            _set_capability_pending(graph, thread_id, pend)
+            return session, None, False, pend
+    except Exception as exc:
+        logger.warning("resolve_text_action 解析失败，降级为无动作：%s", exc)
+    return session, None, False, None
 
 
 def _persist_session(session: dict, thread_id: str, status: str, message: str,
@@ -286,8 +325,9 @@ def _persist_session(session: dict, thread_id: str, status: str, message: str,
             intent=(tool_names[-1] if tool_names else None), workflow=None,
             route_status=status, tool_calls=tool_names, status=status,
             latency_ms=latency_ms)
-    except Exception:
-        pass
+    except Exception as exc:
+        # P2-3：文档化降级（持久化失败不干扰对话），仅记录
+        logger.warning("会话/日志持久化失败（降级不阻断）：%s", exc)
 
 
 def _last_user_content(state) -> str:
@@ -371,8 +411,18 @@ def build_react_graph(model=None, mode: str = "UNSET", checkpointer=None,
                 out_msgs.append(ToolMessage(content="{'error': '工具不在当前目录'}",
                                             tool_call_id=tc["id"]))
             else:
+                # P1-2：工具执行异常 → 结构化错误（对齐 tool.py 的 DEPENDENCY_ERROR 语义，防 500）。
+                # **GraphInterrupt 必须放行**——workflow 工具的 interrupt()（HITL 审批）靠它挂起，
+                # 捕获会打断审批机制（审查 P6 实测回归）。
+                try:
+                    result = t.invoke(args)
+                except GraphInterrupt:
+                    raise
+                except Exception as exc:
+                    result = {"error_code": "DEPENDENCY_ERROR",
+                              "error_detail": f"工具执行异常：{exc}"}
                 out_msgs.append(ToolMessage(
-                    content=json.dumps(t.invoke(args), ensure_ascii=False, default=str),
+                    content=json.dumps(result, ensure_ascii=False, default=str),
                     tool_call_id=tc["id"]))
             n += 1
         exec_["tool_calls"] = exec_.get("tool_calls", 0) + n

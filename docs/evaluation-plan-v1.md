@@ -3,7 +3,7 @@
 > 版本：**V1.2.3（Frozen）**
 > 日期：2026-09-28
 > 定位：Agent「效果 + 性能 + 安全」评估实施方案（**非**业务冻结基线；不推翻任何 Frozen 契约）
-> 上游：`docs/agent-plan-b-react-v1.md`（方案 B，已落地）；Correctness 层 = SC 26 条 + sc_runner + 175 测试
+> 上游：`docs/agent-plan-b-react-v1.md`（方案 B，已落地）；Correctness 层 = SC 26 条 + sc_runner + 212 测试
 > （以当前 HEAD 的 pytest 计数为准；修复窗口推进使计数从 160 增长）
 > （源于 `docs/agent-evaluation-v2-v1.md`（Spec-3），该文档已 **SUPERSEDED**，其资产并入本方案）
 > V1.0 → V1.1 变更：经两轮外部审查 + 代码核对后冻结。新增 M6/M7/M8，修正 M1/M2/M4/M5 判定口径，
@@ -20,7 +20,7 @@
 
 ## 0. 一句话概括
 
-在 Correctness 层（175 测试 + SC 确定性断言 + G2/G3/G5/G6）之上，新增 **Effectiveness / Performance / Safety**
+在 Correctness 层（212 测试 + SC 确定性断言 + G2/G3/G5/G6）之上，新增 **Effectiveness / Performance / Safety**
 三层共 8 组指标，产出可写进简历的数字。执行：**离线 fake LLM 验证管线 → live DeepSeek 复跑出数字**
 （每 case 重复 3 次，temperature=0，报告均值 + 稳定性）。
 
@@ -45,7 +45,7 @@ P1     nDCG / Dense-vs-Hybrid / LLM-as-judge / 复杂 Reranker / 复杂负载   
 
 ### 1.2 边界（诚实声明）
 
-- ❌ 不声称覆盖率：175 测试 ≠ code coverage，简历只能写「175 项自动化测试通过」（以 HEAD 计数为准）。
+- ❌ 不声称覆盖率：212 测试 ≠ code coverage，简历只能写「212 项自动化测试通过」（以 HEAD 计数为准）。
 - ❌ 不声称生产级：单用户 Demo + 合成数据，数字只代表本项目测试集。
 - ❌ V1 不做 Hybrid/Reranker/nDCG（等 Dense 结果出来若值得改进，再立对照实验）。
 - ✅ 可复现：固定 seed / 测试集 / AS_OF_DATE / live 跑法，且报告带 Reproducibility Metadata（§4）。
@@ -340,7 +340,7 @@ scripts/eval_metrics.py
 
 优先：**Tool Plan Accuracy / Task Success / Conditional Multi-hop Success / RAG Hit@5 / E2E P95**，
 第六个在 **Grounded Answer** 与 **Unauthorized Execution = 0%** 中选一。
-README 分四层展示：Correctness（175 tests）/ Effectiveness（M1~M4, M7）/ Performance（M5）/ Safety（M6）。
+README 分四层展示：Correctness（212 tests）/ Effectiveness（M1~M4, M7）/ Performance（M5）/ Safety（M6）。
 
 ## 9. 修订记录
 
@@ -352,3 +352,4 @@ README 分四层展示：Correctness（175 tests）/ Effectiveness（M1~M4, M7�
 | V1.2.1 | 2026-09-27 | 数据实测口径修正（非定义变更）：M3 风险枚举为 **HIGH/NORMAL**（原文 LOW 系笔误）；HIGH 侧实测仅 1 个 SKU（`SKU_01_STOCKOUT_01`；ANOMALY_DROP=NORMAL、SLOW/OVERSTOCK 对缺货风险 DATA_UNAVAILABLE）；§7 风险行同步 |
 | V1.2.2 | 2026-09-27 | **共享数据解耦（方案 A）**：`rag_gold.yaml` 改为 **M4 专用**（30 条新 schema，answerable/acceptable_docs）；恢复旧 8 条为 `rag_gold_v1.yaml`（**Correctness 冻结副本**，供 `test_rag_gold_all_hit` / `eval_g5.py` 读取，`expect_doc` 格式）；补「共享数据迁移纪律」（改共享文件须同一提交内枚举/隔离读者 + 重跑测试 + 记修订）；修复因转换共享文件导致的 Correctness 层 `test_rag_gold_all_hit` 回归（KeyError: expect_doc） |
 | V1.2.3 | 2026-09-28 | **对齐修复窗口最终语义（fix-plan 0~7 全部落地提交 `09bc470`/`3d6ca03`）**。Correctness 160→175（以 HEAD pytest 为准）；CS-08 `already_exists` 两路径——§2.4 resume 前查 `__interrupt__`、§3.2 副作用改「每订单仅一次 T-X-01」、§5 跑后清理升级为必需（repeat 语义）；CS-06 在途超期→ANOMALY（H2）/ CS-08 可退数量成功态（H3）/ OP-03 候选非空（M1）前瞻收口；M6 补 H4 否定句 |
+| V1.3 | 2026-10-08 | **事实性同步（指标集/定义不变，P0~P3 修复窗口）**：① Correctness 计数 175→**212**（当前 HEAD 实数，新增会话凭证/两步切换/值感知判定等测试）；② **M4 判定升级 doc_id**（P2-7b：`acceptable_docs` 标题 → `acceptable_doc_ids` id 判定，消除标题歧义；gold 重标 + 迁移纪律）；③ **check_facts 值感知**（P2-7a：bool/int/float 分支校验值，M2 FACTS 仍为关键词保真不升级）；④ Metadata 补 **`world: dev`**（D-1 复现基准，dev/eval 二选一） |

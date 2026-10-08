@@ -47,6 +47,7 @@
   <div id="log"></div>
   <script>
     let sessionId = null;
+    let sessionToken = null;        // 会话凭证（option b+：每个响应回传，后续请求携带）
     let pendingCap = null;          // {domain, original_message}
 
     async function post(path, body) {
@@ -69,6 +70,7 @@
     async function createSession() {
       const s = await post("/api/session", { user_id: 1, workspace_mode: mode.value, store_id: Number(store.value) });
       sessionId = s.session_id;
+      sessionToken = s.session_token;
       pendingCap = null;
       sessionLabel.textContent = "会话 " + sessionId;
       log.innerHTML = "";
@@ -82,7 +84,8 @@
       confirmBar.style.display = "none";
       capBar.style.display = "none";
       if (!replay) render({ role: "user", content: body.message });
-      const res = await post("/api/agent", Object.assign({ session_id: sessionId, user_id: 1 }, body));
+      const res = await post("/api/agent", Object.assign({ session_id: sessionId, user_id: 1, session_token: sessionToken }, body));
+      if (res.session_token) sessionToken = res.session_token;   // 每个响应回传（首轮即可拿到）
       render({ role: "assistant", content: res.message });
       if (res.capability_required && res.capability_pending) {
         pendingCap = res.capability_pending;

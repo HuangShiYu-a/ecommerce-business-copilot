@@ -36,7 +36,9 @@
 ```text
 Ecommerce Business Agent
             │
-   Intent / Task Routing
+  ReAct Tool-Orchestrator（LLM 看工具目录自主编排 → 确定性工具裁定）
+            │
+   Workspace Mode（能力档案：UNSET / 客服 / 运营，切换需用户确认）
             │
    ┌────────┴────────┐
    ↓                 ↓
@@ -45,7 +47,7 @@ Customer Service   Operations
 ```
 
 两边共享：商品、订单、库存、客户、售后、反馈、知识、分析等公共域。  
-**不是**两个完全独立的程序，而是一个 Agent + 路由 + 分角色能力集。
+**不是**两个完全独立的程序，而是一个 Agent（ReAct 工具调用式）+ Workspace Mode 能力档案 + 分角色工具目录。
 
 ### 1.5 明确不做（V1）
 
@@ -884,3 +886,4 @@ Capability Contract（Core Tool 定稿）
 |------|------|------|
 | V1 | 2026-09-11 | 首版定稿：由角色/场景矩阵讨论稿规范化而成 |
 | V1.1 | 2026-09-11 | 审查小修：解耦数据库产品表述；强化审批人/审计/数据边界/不得臆测等业务原则；收紧 OP-05/OP-07/OP-08/OP-11；修正 CS-12 与 OP-13 为共享反馈事实；衔接关系改为可迭代但业务锁定 |
+| V1.2 | 2026-10-08 | **§1.4 产品形态同步（P5）**：架构图由"Intent / Task Routing"更新为"ReAct Tool-Orchestrator + Workspace Mode"（对齐方案 B 已落地实现）；业务定义与范围不变 |
