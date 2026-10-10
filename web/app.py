@@ -52,9 +52,7 @@ class Workbench:
         self._confirm_row: ui.row | None = None
         self._status: ui.label | None = None
         self._welcome: ui.column | None = None
-        self._welcome_input: ui.textarea | None = None   # E4：空态居中输入框
         self._welcome_suggestions: ui.column | None = None
-        self._input_row: ui.row | None = None   # E4：底部输入行（空态时隐藏，与居中输入互斥）
         self._build()
 
     # ---- 布局 ----
@@ -81,23 +79,19 @@ class Workbench:
             self._session_list = ui.column().classes("w-full gap-1")
             self._status = ui.label().classes("mt-3 text-xs text-grey-6")
 
-        with ui.column().classes("h-full flex flex-col overflow-hidden p-4"):
+        with ui.column().classes("h-full w-full flex flex-col overflow-hidden p-4"):
             # 第一批 R3+第二批 E2（方案A）：普通 overflow 列 + flex-col-reverse + 气泡前插
             # → 纯 CSS 通道自动贴底（最新在底部、初始/切会话/新消息均显示最新）。
             # 不用 ui.scroll_area：其内容绝对定位使 column-reverse 失效，且本架构 run_method/JS 不投递。
+            # 主列 w-full：.nicegui-content 默认 align-items:flex-start，不加 w-full 时
+            # welcome 态主列会回落到内容宽（~264px），导致右侧大片空白。
             self._chat_area = ui.column().classes(
                 "flex-1 min-h-0 w-full overflow-y-auto flex-col-reverse")
-            self._welcome = ui.column().classes("flex-1 min-h-0 w-full items-center justify-center gap-2")
+            self._welcome = ui.column().classes("flex-1 min-h-0 w-full items-center justify-end gap-2")
             with self._welcome:
-                # 第三批 E4：空态居中输入框（与底部输入互斥，session 激活后随 welcome 隐藏）
-                with ui.row().classes("w-full max-w-md items-center gap-2"):
-                    self._welcome_input = ui.textarea(
-                        placeholder="请输入问题…（Enter 发送 / Shift+Enter 换行）"
-                    ).props('outlined dense autogrow input-style="max-height: 10rem; overflow-y: auto"').classes("grow w-full")
-                    self._welcome_input.on("keydown", self._on_input_keydown)
-                    ui.button("发送", on_click=lambda: self._send())
-                # E4：建议区独立容器（每次 _render_welcome 重建，不触碰输入框）
-                self._welcome_suggestions = ui.column().classes("w-full max-w-md gap-1")
+                # 建议区（每次 _render_welcome 重建；输入框统一固定在底部，不再居中）。
+                # justify-end + mb-4：建议紧贴输入框上方。
+                self._welcome_suggestions = ui.column().classes("w-full max-w-md gap-1 mb-4")
             self._welcome.set_visibility(False)
             with ui.row().classes("flex-none items-center gap-2") as self._cap_banner:
                 self._cap_banner.set_visibility(False)
@@ -108,11 +102,12 @@ class Workbench:
                 ui.button("确认", on_click=lambda: self._resume("approved")).props("color=positive")
                 ui.button("拒绝", on_click=lambda: self._resume("rejected")).props("color=negative")
             self._confirm_row.set_visibility(False)
-            with ui.row().classes("flex-none w-full items-center gap-2") as self._input_row:
-                # 第二批 E3：textarea + autogrow（输入换行增高，上限后内部滚动；Enter 发送 / Shift+Enter 换行）
+            with ui.row().classes("flex-none w-full items-center gap-2"):
+                # E3：textarea + autogrow（输入换行增高，上限后内部滚动；Enter 发送 / Shift+Enter 换行）。
+                # flex-1：占「行宽−按钮宽」，宽度固定不随内容变化；按钮并列右侧（w-full 会把按钮挤到下一行）。
                 self._msg_input = ui.textarea(
                     placeholder="请输入问题…（Enter 发送 / Shift+Enter 换行）"
-                ).props('outlined dense autogrow input-style="max-height: 10rem; overflow-y: auto"').classes("grow w-full")
+                ).props('outlined dense autogrow input-style="max-height: 10rem; overflow-y: auto"').classes("flex-1")
                 self._msg_input.on("keydown", self._on_input_keydown)
                 ui.button("发送", on_click=lambda: self._send())
 
@@ -152,20 +147,7 @@ class Workbench:
             f"模式：{_label(self.workspace_mode)} · 门店{self.store_id}"
             + (" · 处理中…" if self.busy else ""))
 
-    # ---- 欢迎引导（I2：空会话示例问题；E4：居中输入框）----
-    def _active_input(self):
-        """当前可见的输入框：空态（无会话）用居中输入，会话激活用底部输入。"""
-        if self._welcome_input is not None and self.session_id is None:
-            return self._welcome_input
-        return self._msg_input
-
-    def _clear_inputs(self):
-        """新建/切会话时双输入都清空（E4）。"""
-        if self._msg_input is not None:
-            self._msg_input.set_value("")
-        if self._welcome_input is not None:
-            self._welcome_input.set_value("")
-
+    # ---- 欢迎引导（I2：空会话示例问题）----
     def _render_welcome(self):
         if self._welcome_suggestions is None:
             return
@@ -182,14 +164,11 @@ class Workbench:
         show = self.session_id is None   # 无活动会话时才显示引导
         self._welcome.set_visibility(show)
         self._chat_area.set_visibility(not show)
-        # E4：底部输入行与居中输入互斥（空态隐藏底部行）
-        if self._input_row is not None:
-            self._input_row.set_visibility(not show)
         if show:
             self._render_welcome()
 
     async def _send_suggestion(self, text: str):
-        self._active_input().set_value(text)
+        self._msg_input.set_value(text)
         await self._send()
 
     def _switch_session(self, session_id: str):
@@ -216,7 +195,7 @@ class Workbench:
             for m in api.load_conversation(graph, session_id):
                 self._add_bubble(m["role"], m["content"])
         self._refresh_sessions()
-        self._clear_inputs()
+        self._msg_input.set_value("")
         self._update_welcome()
 
     def _new_session(self):
@@ -228,7 +207,7 @@ class Workbench:
         self._chat_area.clear()
         self._cap_banner.set_visibility(False)
         self._confirm_row.set_visibility(False)
-        self._clear_inputs()
+        self._msg_input.set_value("")
         self._refresh_sessions()
         self._update_welcome()
 
@@ -279,8 +258,7 @@ class Workbench:
         self._handle_resp(resp)
 
     async def _send(self, capability_replay: bool = False):
-        inp = self._active_input()   # E4：取当前可见输入框（空态居中 / 会话底部）
-        msg = (inp.value or "").strip()
+        msg = (self._msg_input.value or "").strip()
         if not capability_replay and not msg:
             return
         if self.busy:
@@ -308,7 +286,7 @@ class Workbench:
                     thinking.delete()
                 except Exception:
                     pass
-        inp.set_value("")
+        self._msg_input.set_value("")
         self._handle_resp(resp)
 
     def _handle_resp(self, resp: dict):
