@@ -1,0 +1,75 @@
+{
+  "comparison": {
+    "coverage": {
+      "legacy": "22/26",
+      "react": "26/26"
+    },
+    "business_result_pass_rate": {
+      "common_scs": 22,
+      "repeats": 3,
+      "predicate": "legacy=facts_on=False（业务结果）；react=官方 M2 全谓词推导（更严，含答案保真）",
+      "legacy": "54/66",
+      "react": "66/66",
+      "legacy_rate": 0.8182,
+      "react_rate": 1.0,
+      "react_method": "官方 M2 全谓词推导（facts_on=True ⊇ facts_on=False）"
+    }
+  },
+  "legacy": {
+    "run_success": "18/22",
+    "coverage": "22/26",
+    "failures": [
+      {
+        "id": "SC-CS08-001",
+        "err": "legacy crash: TypeError"
+      },
+      {
+        "id": "SC-CS08-002",
+        "err": "legacy crash: TypeError"
+      },
+      {
+        "id": "SC-CS08-003",
+        "err": "legacy crash: TypeError"
+      },
+      {
+        "id": "SC-CS08-006",
+        "detail": {
+          "status": "already_exists",
+          "approval_required": null
+        },
+        "status": "completed"
+      },
+      {
+        "id": "SC-OP05-001",
+        "detail": {
+          "status": null
+        },
+        "status": "terminated"
+      },
+      {
+        "id": "SC-OP05-002",
+        "detail": {
+          "status": null
+        },
+        "status": "completed"
+      },
+      {
+        "id": "SC-OP05-004",
+        "detail": {
+          "status": null
+        },
+        "status": "terminated"
+      },
+      {
+        "id": "SC-ISO-001",
+        "err": "legacy crash: TypeError"
+      }
+    ]
+  },
+  "react": {
+    "multi_hop": "36/36",
+    "multi_tool": "measured(M1)",
+    "source_report": "514ae277"
+  },
+  "note": "同口径说明（P8-E 方案 A）：覆盖率 = 同 26 场景总集（legacy 支持 22，ReAct 26；legacy 的 4 个不支持 SC 为 live LLM 路由传参导致的 datetime 崩溃，真实缺陷）；业务结果通过率 = legacy 可执行的共同场景 × 3 次、facts_on=False；**legacy 为 live LLM 路由（非确定性），3× 为独立 fresh-thread 运行（不声称恒等）**；react 侧由官方 M2 全谓词报告推导（facts_on=True ⊇ facts_on=False：M2 26 SC × 3 全过 ⇒ 共同子集业务结果必然 66/66，更严谓词通过是更强证据；未做独立 facts_on=False 重跑，无 API 依赖）。legacy 结构性不支持 multi-tool / 条件多跳 → N/A；ReAct 侧取自最新 reports/eval_metrics_*.json（含 m2+m3 的报告）。"
+}
