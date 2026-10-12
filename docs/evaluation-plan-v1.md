@@ -156,9 +156,9 @@ P1     nDCG / Dense-vs-Hybrid / LLM-as-judge / 复杂 Reranker / 复杂负载   
 - 样本 = 全部 live 请求（预估 30~50 条代表 case × 3 runs = 90~150 samples）。
 - **E2E 在 warm/cached graph 上测**（ReactGraphFactory 常驻缓存 3 图，真实使用不每请求重建）；graph build 单独记录，不计入 E2E。
 - warm-up 3~5 次后再正式记录（剔除首请求连接/初始化/embed 冷启动）。
-- P95 从**全部 pooled samples** 排序算（**禁止**先按 case 平均再 P95，会压掉波动）；报 N。
+- P95 **按 workload 各自样本池**排序算（**禁止**先按 case 平均再 P95，会压掉波动；也不跨 workload 混池）；报 N。
 - HITL 拆分：workflow case 记 `Pre-HITL`（request→interrupt）与 `Post-HITL`（resume→final）两段；**用户等待确认时间一律不算 Agent Latency**。
-- 内部报告按 workload 拆（单跳 / 多工具 / 多跳 / RAG / workflow-pre-interrupt）；简历只写总体 E2E P95。
+- 按 workload 独立报 P50/P95（单跳 / 多工具 / 多跳 / RAG / workflow-pre-interrupt）；简历写 per-workload（M1/M2/M3 各 P95），不写单一"总体"数字（P8-I10：代码实现即 per-workload）。
 
 ---
 
@@ -230,7 +230,7 @@ Conflict Resolution Accuracy = 检索返回 RULE_CONFLICT / RULE_CONFLICT 条数
 ### 3.5 M5 E2E Performance
 
 ```
-E2E P50 / P95（pooled samples，报 N；warm-up 后；warm/cached graph，graph build 不计入）
+E2E P50 / P95（**per-workload samples**，报 N；warm-up 后；warm/cached graph，graph build 不计入）
 Pre-HITL / Post-HITL 分段（workflow case）
 ```
 另采集（诊断，不进简历）：`Average Tool Calls per Task`、Token 用量（P1 顺手）。
@@ -266,16 +266,20 @@ Fact Support Rate 负责"答案事实 ↔ 检索内容"的真实支撑。
 ### 3.8 M8 Legacy vs ReAct Baseline（P0.5）
 
 - 同一批**双方都能尝试**的 case（限定业务 Query/Analysis/Workflow，排除 no_tool 闲聊 / capability / clarify 这类 legacy 无概念的），分别跑 legacy（`build_runtime_graph` + `run_agent`，role 映射）与 ReAct，同一 evaluator。
-- 输出对比表 + **coverage**（公式：`架构能进入有效处理流程的 case / 可评测 case 总数`，即 Supported / Comparable）：
+- **legacy 口径（P8-E 方案 A）**：live LLM 路由（legacy orchestrator 默认 `LLM_MODE=live`，非确定性）；4 个不支持 SC（CS08-001/002/003、ISO-001）为 LLM 路由传参导致的 datetime 崩溃（真实缺陷，ReAct 侧无）。3× 为独立 fresh-thread 运行，不声称"确定性恒等"。
+- 输出对比表（两维）+ coverage：
 ```
-                  Legacy    ReAct
-Task Success       XX%      XX%
-Multi-tool         XX%      XX%
-Conditional Multi-hop 不适用（legacy 结构性无此能力）  XX%
+                     Legacy    ReAct
+Coverage（同 26 集）    22/26     26/26
+业务结果通过率          54/66     66/66
+ （共同可执行 22 场景 × 3、facts_on=False）
+Conditional Multi-hop  N/A       36/36（M3）
+Multi-tool             N/A       measured(M1)
 ```
+- **业务结果通过率同分母**（共同 legacy 可执行子集 × 3；legacy 3× 重跑中偶发崩溃计为失败，不排除，`_legacy_business_rate`）；**react 侧由官方 M2 全谓词报告推导**（facts_on=True ⊇ facts_on=False，更严——M2 26 SC × 3 全过 ⇒ 共同子集业务结果必然全过，未做独立 facts_on=False 重跑）。
 - 意义：为"为什么从 Router 改成 Tool-Orchestrator"提供同一 benchmark 上的量化证据。
 - **结构性不支持的能力标 N/A，不标 0%**（legacy 无条件多跳 ≠ "尝试 100 次全失败"，是架构无此能力；面试措辞用"N/A"）。
-- 风险：legacy 长期未跑 live，可能暴露 12 意图闭集覆盖缺口——这本身是故事一部分。
+- 风险：legacy live LLM 路由非确定性（coverage 22~23/26 波动），数字取最新报告实测、如实标注。
 - 表述纪律：只说"同一业务测试集与模型条件下新旧系统对比"，不宣称"实验证明 ReAct 架构导致成功率提升"（prompt/架构同时变，非严格因果实验）。
 
 ---
@@ -360,3 +364,4 @@ README 分四层展示：Correctness（212 tests）/ Effectiveness（M1~M4, M7�
 | V1.2.3 | 2026-09-28 | **对齐修复窗口最终语义（fix-plan 0~7 全部落地提交 `09bc470`/`3d6ca03`）**。Correctness 160→175（以 HEAD pytest 为准）；CS-08 `already_exists` 两路径——§2.4 resume 前查 `__interrupt__`、§3.2 副作用改「每订单仅一次 T-X-01」、§5 跑后清理升级为必需（repeat 语义）；CS-06 在途超期→ANOMALY（H2）/ CS-08 可退数量成功态（H3）/ OP-03 候选非空（M1）前瞻收口；M6 补 H4 否定句 |
 | V1.3 | 2026-10-08 | **事实性同步（指标集/定义不变，P0~P3 修复窗口）**：① Correctness 计数 175→**212**（当前 HEAD 实数，新增会话凭证/两步切换/值感知判定等测试）；② **M4 判定升级 doc_id**（P2-7b：`acceptable_docs` 标题 → `acceptable_doc_ids` id 判定，消除标题歧义；gold 重标 + 迁移纪律）；③ **check_facts 值感知**（P2-7a：bool/int/float 分支校验值，M2 FACTS 仍为关键词保真不升级）；④ Metadata 补 **`world: dev`**（D-1 复现基准，dev/eval 二选一） |
 | V1.4 | 2026-10-12 | **定义修正（指标集不变，P8-I5/I6，分支 p8-eval-calibration）**：① §3.3 M3 明确**只测条件编排**（轨迹不变量 + 条件来自工具结构化结果），`required_facts` 标为**参考字段（未参与判定）**——最终答案事实由 M2 Final Answer Fidelity 承担（P8 决策 A，消除"gold 注释答案含 facts 但 judge 未判"的文档-代码矛盾）；② §3.2 补**谓词范围说明**：UNDETERMINED 分支=error_code/未定即通过（不校验具体缺因）、OP-07=冒烟（有评分即过）——78/78 为当前谓词口径（M5 的 per-workload P95 措辞对齐见阶段 F，I10） |
+| V1.5 | 2026-10-12 | **文档同步（P8-I10，阶段 F）**：① §2.5/§3.5 **M5 per-workload P95**（改原 pooled 描述；代码实现即各 workload 独立统计）；② §3.8 **M8 legacy 口径如实化**——live LLM 路由（非确定性）、4 崩溃=LLM 传参真实缺陷、业务结果通过率同分母（共同 22×3，react 由官方 M2 全谓词推导）；③ 与 README/报告（`eval_metrics_20261012_200656.json` + `m8_20261012_205725.json`）对齐 |

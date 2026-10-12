@@ -30,9 +30,9 @@ Python / LangGraph（自建 StateGraph ReAct 循环）/ DeepSeek / PostgreSQL + 
 
 ## 评测（四层）
 
-> 可复现：DeepSeek-chat / temperature=0 / as_of=2026-09-17 / 数据集 v1.2.3 / world=dev / live repeat=3 取均值。
-> 判定函数纯函数化 + fake LLM 离线 100% 验证后再上 live。
-> 数字均出自提交报告 `reports/eval_metrics_20261008_212207.json`（M1~M5）与 `reports/m8_20261008_213542.json`（M8），以当前 HEAD 实测为准。
+> 可复现：DeepSeek-chat / temperature=0 / as_of=2026-09-17 / 数据集 v1.2.3 / world=dev / live repeat=3。
+> 判定函数纯函数化 + fake LLM 离线 100% 验证后再上 live（三模式预热后正式样本计 P95）。
+> 数字均出自提交报告 `reports/eval_metrics_20261012_200656.json`（M1~M5）与 `reports/m8_20261012_205725.json`（M8），metadata 记完整 commit SHA + worktree=clean + world=dev；旧报告见 `*_HISTORICAL.json`。
 
 ### Correctness — 功能正确性
 - **212 项自动化测试通过**（当前 HEAD 实测；确定性断言 + SC 26 业务场景 + M6 结构性安全）
@@ -41,19 +41,21 @@ Python / LangGraph（自建 StateGraph ReAct 循环）/ DeepSeek / PostgreSQL + 
 ### Effectiveness — 效果
 | 指标 | 结果 |
 |---|---|
-| Tool Plan Accuracy（M1） | **100%**（135/135，45/45 case-stable） |
-| Task Success（M2） | **100%**（78/78，26 SC × repeat 3） |
-| Conditional Multi-hop / Early Stop（M3） | **100%**（36/36） |
-| RAG Hit@5（M4） | **100%**（22/22） |
+| Tool Plan Accuracy（M1，严格判定：multi_tool 必需全调） | **100%**（135/135，45/45 case-stable） |
+| Task Success（M2，业务结果+约束+副作用+答案保真四层谓词） | **100%**（78/78，26 SC × repeat 3） |
+| Conditional Multi-hop / Early Stop（M3，轨迹不变量+条件判定） | **100%**（36/36，12 场景 × repeat 3） |
+| RAG Hit@5（M4，22 可答问题 doc 级判定） | **100%**（22/22） |
 | RAG MRR@10（M4） | **0.833** |
 | RAG Correct Abstention / Conflict Resolution（M4） | 6/6 / 2/2 |
 
-### Performance — 性能（M5，池化样本）
+### Performance — 性能（M5，per-workload P95）
 | Workload | P50 | P95 |
 |---|---|---|
-| 工具调用（M1） | 2.0s | 4.3s |
-| 任务完成（M2） | 2.2s | 4.1s |
-| 条件多跳（M3） | 2.5s | 4.8s |
+| 工具调用（M1） | 2.3s | 5.2s |
+| 任务完成（M2） | 2.6s | 4.7s |
+| 条件多跳（M3） | 2.8s | 6.0s |
+
+> per-workload P95（各自样本池排序）；warm 图、单机 Demo 环境，含模型 API 网络耗时，不代表生产性能。
 
 ### Safety — 安全（M6，结构性 + 测试证据）
 - **Unauthorized Execution Rate = 0%**（runtime 对目录外工具强制拦截）
@@ -61,12 +63,14 @@ Python / LangGraph（自建 StateGraph ReAct 循环）/ DeepSeek / PostgreSQL + 
 - **Block Rate = 100%**（越权尝试全部被拦截）
 - Missing-slot Hallucination：缺参必反问，不编造标识符（R4 红线）
 
-### 架构演进对比（M8：Legacy Router vs ReAct，同 SC 26 业务结果）
-| 维度 | Legacy（Intent Router） | ReAct（Tool-Orchestrator） |
+### 架构演进对比（M8：Legacy Router vs ReAct，同 benchmark）
+| 维度 | Legacy（Intent Router，live LLM 路由） | ReAct（Tool-Orchestrator） |
 |---|---|---|
-| Coverage（可处理场景） | 85%（22/26，含 4 个 datetime 崩溃） | **100%**（26/26） |
-| Task Success（业务口径） | 81.8%（18/22） | **100%**（78/78） |
-| Conditional Multi-hop | N/A（结构性无） | **100%**（36/36） |
+| Coverage（可处理场景，同 26 集） | 22/26（85%，含 4 个 LLM 路由传参崩溃） | **26/26（100%）** |
+| 业务结果通过率（共同 22 场景 × 3，同分母 66） | 54/66（81.8%） | **66/66（100%）** |
+| Conditional Multi-hop | N/A（结构性无） | **36/36（100%）** |
+
+> M8 同口径说明：legacy 为 live LLM 路由（非确定性），3× 为独立运行（fresh thread）；4 个不支持 SC 为 LLM 路由传参导致的 datetime 崩溃（真实缺陷）。react 侧业务通过率由官方 M2 全谓词报告推导（facts_on=True ⊇ facts_on=False，更严）。表述纪律：同场景系统版本对比，非严格因果实验。
 
 ## 快速开始
 
