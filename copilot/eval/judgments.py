@@ -107,7 +107,8 @@ def judge_m1_plan(trace, ap: dict, response_status: str = "completed",
                   response_text: str = "") -> dict:
     """按 acceptable_plan 判定 M1。返回 {type, exact, precision, recall, arg_ok, n_calls}。
 
-    - tool-bearing（single/multi/knowledge/workflow/boundary）：C∩required≠∅ 且 C⊆allowed → exact
+    - tool-bearing：multi_tool 要求 required ⊆ C ⊆ allowed（**必需工具全调**，P8-I1）；
+      其余（single/knowledge/workflow/boundary）C∩required≠∅ 且 C⊆allowed → exact
     - capability：调了 request_capability(domain) 且无越权业务工具 → exact
     - clarify / no_tool：无工具调用 + response 正常 → exact
     - Precision/Recall 仅 tool-bearing；clarify/no_tool/capability 标 None（N/A，§3.1）
@@ -118,8 +119,15 @@ def judge_m1_plan(trace, ap: dict, response_status: str = "completed",
     if pt in ("single_tool", "multi_tool", "knowledge_qa", "workflow_request", "boundary"):
         required = set(ap.get("required_tools") or [])
         allowed = set(ap.get("allowed_tools") or required)
-        hit = bool(C & required)
         no_outside = C <= allowed
+        if pt == "multi_tool":
+            # P8-I1：多工具任务要求必需工具**全部调用**（gold 8 例均为"两个独立任务"语义，
+            # 如 ts-021"能退货吗，另外物流到哪了"）；漏调任一必需工具即不通过。
+            # 修复此前 `C∩R≠∅` 过宽判定（漏调可过）。
+            hit = required <= C
+        else:
+            # 其余类型任一必需命中即可（boundary 为真歧义设计：required 多值 = 合法替代路径）
+            hit = bool(C & required)
         exact = hit and no_outside
         precision = (len(C & allowed) / len(C)) if C else None
         recall = (len(C & required) / len(required)) if required else None

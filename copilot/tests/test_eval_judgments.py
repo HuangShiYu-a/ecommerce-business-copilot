@@ -66,6 +66,37 @@ def test_m1_multi_tool_parallel():
     assert judge_m1_plan(trace, ap)["exact"] is True
 
 
+# ---- P8-I1：multi_tool 必需工具全调（此前 C∩R≠∅ 过宽，漏调可过）----
+
+def test_m1_multi_tool_all_required_passes():
+    """P8-I1：两个必需工具全调 → 通过。"""
+    ap = {"type": "multi_tool",
+          "required_tools": ["check_return_eligibility", "get_shipping_status"]}
+    trace = [("check_return_eligibility", {}, False, {}),
+             ("get_shipping_status", {}, False, {})]
+    assert judge_m1_plan(trace, ap)["exact"] is True
+
+
+def test_m1_multi_tool_missing_one_fails():
+    """P8-I1：只调两个必需工具中的一个 → 失败（漏调不得误判通过）。"""
+    ap = {"type": "multi_tool",
+          "required_tools": ["check_return_eligibility", "get_shipping_status"]}
+    trace = [("check_return_eligibility", {}, False, {})]   # 漏调 get_shipping_status
+    r = judge_m1_plan(trace, ap)
+    assert r["exact"] is False
+    assert r["recall"] == 0.5    # 2 必需命中 1
+
+
+def test_m1_multi_tool_out_of_allowed_fails():
+    """P8-I1：必需工具全调但调用了允许范围外工具 → 失败。"""
+    ap = {"type": "multi_tool",
+          "required_tools": ["check_return_eligibility", "get_shipping_status"]}
+    trace = [("check_return_eligibility", {}, False, {}),
+             ("get_shipping_status", {}, False, {}),
+             ("get_inventory", {}, False, {})]   # 越权工具（allowed 缺省 = required）
+    assert judge_m1_plan(trace, ap)["exact"] is False
+
+
 def test_m1_boundary_disjunction():
     # required 多值 = 任一命中即可（合法替代路径）
     ap = {"type": "boundary", "required_tools": ["analyze_stockout_risk",
