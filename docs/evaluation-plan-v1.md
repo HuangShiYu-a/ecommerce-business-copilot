@@ -197,14 +197,20 @@ Task Success =
 按 workflow 定义业务结果谓词（CS-06 / CS-08 / OP-03/04/05/07/08 / ISO，共 8 个），26 SC 全走谓词。
 内部按 workflow 拆分报告（Query/Analysis/Workflow 等）；简历只写总体 Task Success。
 **Final Answer Fidelity 用 required_facts 结构化匹配，不上 LLM-judge**（与 eval_g5 GOLD_KWS 同模式）。
+**谓词范围说明（P8-I6）**：UNDETERMINED 分支（CS-06/OP-04/OP-05/OP-08）= 出现 `error_code` 或
+UNDETERMINED/None 即通过（等价"未定"，**不校验具体缺因**——SC 的 `expected_reason` 为语义参考）；
+OP-07 = 冒烟判定（工具 ok + 有评分，不逐项校验 `expected_formal_result` 维度值）。
+因此 **78/78 = 当前谓词口径下的通过数**，不代表所有 SC 字段均被逐一校验。
 
 ### 3.3 M3 Conditional Orchestration
 
-按 Trace Invariant 判定：
-- `conditional_multihop`：第一跳命中 `first_tool` → condition 成立 → `required_deep_tools` 至少命中一个 → final_answer 含 required_facts → 成功。
+按 Trace Invariant 判定（**P8-I5：只测"条件编排"正确性，不测最终答案事实**）：
+- `conditional_multihop`：第一跳命中 `first_tool` → condition 成立（取自第一跳工具的结构化结果，
+  如 `risk_level==HIGH`，非 LLM 感觉）→ `required_deep_tools` 至少命中一个 → 成功。
 - `early_stop`：第一跳命中 → 未再调用任何深挖工具 → 正常结束 → 成功。
 - 多跳有效性：调用数 < 熔断上限；无重复无意义循环。
-- 最终答案判定与 M2/M7 统一使用 `required_facts`（规则匹配，eval_g5 同款），不上 LLM-judge。
+- **`required_facts` 为参考字段（未参与判定）**：最终答案事实正确性由 M2 Final Answer Fidelity
+  （§3.2 第 4 层）承担，避免为每个指标重复建设脆弱的关键词匹配（P8 决策 A）。
 输出：`Conditional Multi-hop Success` + `Early Stop Accuracy`（分别按 pattern 统计）。
 
 ### 3.4 M4 RAG Retrieval
@@ -353,3 +359,4 @@ README 分四层展示：Correctness（212 tests）/ Effectiveness（M1~M4, M7�
 | V1.2.2 | 2026-09-27 | **共享数据解耦（方案 A）**：`rag_gold.yaml` 改为 **M4 专用**（30 条新 schema，answerable/acceptable_docs）；恢复旧 8 条为 `rag_gold_v1.yaml`（**Correctness 冻结副本**，供 `test_rag_gold_all_hit` / `eval_g5.py` 读取，`expect_doc` 格式）；补「共享数据迁移纪律」（改共享文件须同一提交内枚举/隔离读者 + 重跑测试 + 记修订）；修复因转换共享文件导致的 Correctness 层 `test_rag_gold_all_hit` 回归（KeyError: expect_doc） |
 | V1.2.3 | 2026-09-28 | **对齐修复窗口最终语义（fix-plan 0~7 全部落地提交 `09bc470`/`3d6ca03`）**。Correctness 160→175（以 HEAD pytest 为准）；CS-08 `already_exists` 两路径——§2.4 resume 前查 `__interrupt__`、§3.2 副作用改「每订单仅一次 T-X-01」、§5 跑后清理升级为必需（repeat 语义）；CS-06 在途超期→ANOMALY（H2）/ CS-08 可退数量成功态（H3）/ OP-03 候选非空（M1）前瞻收口；M6 补 H4 否定句 |
 | V1.3 | 2026-10-08 | **事实性同步（指标集/定义不变，P0~P3 修复窗口）**：① Correctness 计数 175→**212**（当前 HEAD 实数，新增会话凭证/两步切换/值感知判定等测试）；② **M4 判定升级 doc_id**（P2-7b：`acceptable_docs` 标题 → `acceptable_doc_ids` id 判定，消除标题歧义；gold 重标 + 迁移纪律）；③ **check_facts 值感知**（P2-7a：bool/int/float 分支校验值，M2 FACTS 仍为关键词保真不升级）；④ Metadata 补 **`world: dev`**（D-1 复现基准，dev/eval 二选一） |
+| V1.4 | 2026-10-12 | **定义修正（指标集不变，P8-I5/I6，分支 p8-eval-calibration）**：① §3.3 M3 明确**只测条件编排**（轨迹不变量 + 条件来自工具结构化结果），`required_facts` 标为**参考字段（未参与判定）**——最终答案事实由 M2 Final Answer Fidelity 承担（P8 决策 A，消除"gold 注释答案含 facts 但 judge 未判"的文档-代码矛盾）；② §3.2 补**谓词范围说明**：UNDETERMINED 分支=error_code/未定即通过（不校验具体缺因）、OP-07=冒烟（有评分即过）——78/78 为当前谓词口径（M5 的 per-workload P95 措辞对齐见阶段 F，I10） |
