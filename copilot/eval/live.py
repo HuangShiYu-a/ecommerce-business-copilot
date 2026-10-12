@@ -168,6 +168,36 @@ def run_live_m2(factory, repeat: int = 3) -> dict:
     return _agg(per, len(scs), lat, repeat)
 
 
+def run_react_business(factory, scs: list, repeat: int = 3) -> dict:
+    """ReAct 在给定 SC 集上按**业务结果口径**（facts_on=False）重复运行——M8 同口径 React 侧。
+
+    与 run_live_m2 同机制（_run_once + OP-05 resume + CS-08 清理），仅谓词用 facts_on=False
+    （P8-I4：与 legacy 侧可比，双方均不含答案保真）；不产出 latency（M8 只比结果）。
+    """
+    warmup(factory)
+    n_ok = total = 0
+    per = []
+    for sc in scs:
+        wf = sc["workflow"]
+        mode = MODE_OF[wf]
+        resume_ok = wf in ("OP-05",)
+        pred = predicate_for(sc, facts_on=False)
+        passes = 0
+        for rep in range(repeat):
+            thread = f"m8r-{sc['scenario_id']}-{rep}"
+            resp, _msgs, _l = _run_once(factory, mode, question_for(sc), thread,
+                                        resume_ok=resume_ok)
+            ok, _ = pred(resp)
+            passes += int(ok)
+            if wf == "CS-08":
+                cleanup_cs08()
+        total += repeat
+        n_ok += passes
+        per.append({"id": sc["scenario_id"], "passes": passes, "stable": passes == repeat})
+    return {"run_success": f"{n_ok}/{total}", "run_rate": round(n_ok / total, 4),
+            "n": total, "per_sc": per}
+
+
 def run_live_all(repeat: int = 3, warmup: int = 4) -> dict:
     """完整 live：warm-up → M1/M3/M2（repeat=3）→ M4 确定性。"""
     factory = ReactGraphFactory(checkpointer=InMemorySaver())

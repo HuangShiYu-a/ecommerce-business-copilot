@@ -76,14 +76,19 @@ def _live(repeat: int, out: str | None, only: str | None) -> int:
 
 
 def _baseline() -> int:
+    import time
     from copilot.eval.baseline import m8_report
     rep = m8_report()
-    legacy = rep["legacy"]
-    print(f"[legacy] Task Success(业务): {legacy['run_success']}  coverage: {legacy['coverage']}")
-    for f in legacy["failures"]:
-        print(f"        {f}")
-    print(f"[react]  Task Success: {rep['react']['task_success']}  coverage: {rep['react']['coverage']}")
-    print(f"        multi-tool / multi-hop: {rep['react']['multi_tool']} / {rep['react']['multi_hop']}  (legacy N/A)")
+    comp = rep["comparison"]
+    print(f"[M8] 覆盖率: legacy {comp['coverage']['legacy']} → react {comp['coverage']['react']}（同 26 集）")
+    bpr = comp["business_result_pass_rate"]
+    print(f"[M8] 共同 {bpr['common_scs']} 场景业务结果通过率（×{bpr['repeats']}，{bpr['predicate']}）:")
+    print(f"     legacy {bpr['legacy']} (rate={bpr['legacy_rate']})  →  react {bpr['react']} (rate={bpr['react_rate']})")
+    print(f"[react] 条件多跳: {rep['react'].get('multi_hop')}  multi-tool: {rep['react'].get('multi_tool')}  (legacy N/A)")
+    p = ROOT / f"reports/m8_{time.strftime('%Y%m%d_%H%M%S')}.json"
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(json.dumps(rep, ensure_ascii=False, indent=2), encoding="utf-8")
+    print(f"报告已写入: {p}")
     return 0
 
 
