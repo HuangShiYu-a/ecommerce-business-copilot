@@ -1,5 +1,9 @@
-"""M8 Legacy vs ReAct 基线（§3.8）：同一 SC 26 上跑 legacy（dryrun 规则路由），对比。
+"""M8 Legacy vs ReAct 基线（§3.8）：同一 SC 26 上跑 legacy，对比。
 
+- **legacy 口径（P8-E 方案 A）**：live LLM 路由（legacy orchestrator 默认 LLM_MODE=live，
+  非确定性）——如实反映 legacy 真实运行形态；4 个 SC（CS08-001/002/003、ISO-001）因
+  LLM 路由传参导致 datetime json.dumps 崩溃（真实缺陷，ReAct 侧无此问题）。
+  ×3 为独立运行（fresh thread_id，bl-{scenario_id}-{rep}），不声称"确定性恒等"。
 - Task Success：用业务结果口径（facts_on=False，legacy 模板答案不含自然语言 facts 关键词，
   纯业务结果对比才公平）
 - Coverage：legacy 能进入有效处理流程的 SC / 26
@@ -23,8 +27,11 @@ _CS_ROLES = {"CS-06", "CS-08", "ISO"}
 
 
 def _run_legacy_scs(scs: list, repeat: int = 1) -> dict:
-    """Legacy（dryrun 规则路由）在给定 SC 集上运行 repeat 次（确定性 → 结果恒等，如实记录）。
+    """Legacy（live LLM 路由，非确定性）在给定 SC 集上运行 repeat 次（独立 fresh thread）。
 
+    P8-E：thread_id 每 (SC, repeat) 唯一（bl-{scenario_id}-{rep}）——legacy run_agent 按
+    thread_id 读 PostgresSaver 持久化状态续答，复用 id 会加载历史 checkpoint 导致会话污染
+    （实测假象 15/22）；非确定性 ⇒ repeat 为独立样本，不声称恒等。
     返回含 supported_ids（能进入有效处理的 SC）与 per_sc，供 M8 同口径对比取共同子集。
     """
     g = build_runtime_graph()
@@ -32,10 +39,14 @@ def _run_legacy_scs(scs: list, repeat: int = 1) -> dict:
     detail, supported, per_sc = [], [], []
     for i, sc in enumerate(scs):
         role = "customer_service" if sc["workflow"] in _CS_ROLES else "operations"
-        sess = {"session_id": f"baseline-{i}", "user_id": 1, "role": role, "store_id": 1}
         for rep in range(repeat):
+            # P8-E 修复：thread_id 必须每 (SC, repeat) 唯一——legacy run_agent 按 thread_id
+            # 读 PostgresSaver 持久化状态续答；复用 id 会加载历史 checkpoint（含历史 baseline-{i}），
+            # 导致 OP-03/OP-04 等返回 waiting_user_input（会话污染，实测 15/22 假象）。
+            thread = f"bl-{sc['scenario_id']}-{rep}"
+            sess = {"session_id": thread, "user_id": 1, "role": role, "store_id": 1}
             try:
-                out = run_agent(g, sess["session_id"], sess, question_for(sc))
+                out = run_agent(g, thread, sess, question_for(sc))
                 resp = out["response"]
             except Exception as exc:    # legacy 健壮性：含 datetime 工具结果 json.dumps 崩溃
                 detail.append({"id": sc["scenario_id"], "err": f"legacy crash: {type(exc).__name__}"})
@@ -84,18 +95,16 @@ def m8_report() -> dict:
     """M8 对比（P8-I4 同口径）：覆盖率（同 26 集）+ 共同可执行子集业务结果通过率。
 
     与旧"81.8%→100%"差异：业务结果通过率只取 legacy 可执行的共同场景集、同一业务谓词
-    （facts_on=False）、相同重复次数（3×）；legacy 为确定性 dryrun 规则路由，重复结果恒等
-    （如实记录）。legacy 结构性不支持 multi-tool / 条件多跳（1 intent/轮）→ N/A，
-    ReAct 侧取 M1/M3 实测。
+    （facts_on=False）、相同重复次数（3×）；**legacy 为 live LLM 路由（非确定性），3× 为
+    独立 fresh-thread 运行**（P8-E 方案 A，如实反映 legacy 真实形态；不声称恒等）。
+    legacy 结构性不支持 multi-tool / 条件多跳（1 intent/轮）→ N/A，ReAct 侧取 M1/M3 实测。
     """
-    from .live import run_react_business
-
     all_scs = _sc_data()
     legacy = run_legacy_m2()
     common = [sc for sc in all_scs if sc["scenario_id"] in set(legacy.get("supported_ids", []))]
     legacy_3x = _run_legacy_scs(common, repeat=3)
-    react_bs = run_react_business(common, repeat=3)
     rep = _latest_report()
+    react_bs = _derive_react_business(rep, [s["scenario_id"] for s in common])
     n_sc = len(all_scs)
     n_common = len(common)
     if rep:
@@ -110,17 +119,46 @@ def m8_report() -> dict:
         "comparison": {
             "coverage": {"legacy": f"{n_common}/{n_sc}", "react": f"{n_sc}/{n_sc}"},
             "business_result_pass_rate": {
-                "common_scs": n_common, "repeats": 3, "predicate": "facts_on=False（业务结果口径）",
+                "common_scs": n_common, "repeats": 3,
+                "predicate": ("legacy=facts_on=False（业务结果）；"
+                              "react=官方 M2 全谓词推导（更严，含答案保真）"),
                 "legacy": legacy_3x["run_success"], "react": react_bs["run_success"],
                 "legacy_rate": legacy_3x["run_rate"], "react_rate": react_bs["run_rate"],
+                "react_method": react_bs.get("method"),
             },
         },
         "legacy": {"run_success": legacy["run_success"], "coverage": legacy["coverage"],
                    "failures": legacy["failures"]},
         "react": react,
-        "note": ("同口径说明：覆盖率 = 同 26 场景总集（legacy 支持 22，ReAct 26）；"
-                 "业务结果通过率 = legacy 可执行的共同场景 × 3 次、facts_on=False（双方均不含答案保真），"
-                 "legacy 为确定性规则路由、重复结果恒等（P8-I4）。"
+        "note": ("同口径说明（P8-E 方案 A）：覆盖率 = 同 26 场景总集（legacy 支持 22，ReAct 26；"
+                 "legacy 的 4 个不支持 SC 为 live LLM 路由传参导致的 datetime 崩溃，真实缺陷）；"
+                 "业务结果通过率 = legacy 可执行的共同场景 × 3 次、facts_on=False；"
+                 "**legacy 为 live LLM 路由（非确定性），3× 为独立 fresh-thread 运行（不声称恒等）**；"
+                 "react 侧由官方 M2 全谓词报告推导（facts_on=True ⊇ facts_on=False：M2 26 SC × 3 全过 "
+                 "⇒ 共同子集业务结果必然 66/66，更严谓词通过是更强证据；未做独立 facts_on=False 重跑，无 API 依赖）。"
                  "legacy 结构性不支持 multi-tool / 条件多跳 → N/A；ReAct 侧取自最新 reports/eval_metrics_*.json"
                  "（含 m2+m3 的报告）。"),
     }
+
+
+def _derive_react_business(rep: dict | None, common_ids: list) -> dict:
+    """P8-E 方案 A：从官方 M2 全谓词报告推导共同子集业务结果通过率（不重跑、无 API 依赖）。
+
+    M2 谓词（facts_on=True，含答案保真）⊇ 业务结果谓词（facts_on=False）：M2 报告全过
+    （78/78 且 26/26 case-stable）⇒ 每个 SC 的 3 次重复全部通过 ⇒ 共同子集业务结果必然全过。
+    """
+    total = len(common_ids) * 3
+    base = {"method": "官方 M2 全谓词推导（facts_on=True ⊇ facts_on=False）"}
+    if not (rep and rep.get("m2")):
+        return {**base, "run_success": "未跑（缺 M2 live 报告）", "run_rate": 0.0, "n": 0}
+    m2 = rep["m2"]
+    per = m2.get("per_sc")
+    if per:
+        d = {p["id"]: p["passes"] for p in per}
+        n_ok = sum(d.get(sid, 0) for sid in common_ids)
+    else:
+        full = m2.get("run_rate") == 1.0 and m2.get("n") == 26 * 3
+        n_ok = total if full else None
+    if n_ok is None:
+        return {**base, "run_success": "无法推导（M2 报告非全过）", "run_rate": 0.0, "n": total}
+    return {**base, "run_success": f"{n_ok}/{total}", "run_rate": round(n_ok / total, 4), "n": total}
