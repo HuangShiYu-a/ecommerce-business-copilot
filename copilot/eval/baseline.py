@@ -91,6 +91,36 @@ def _latest_report() -> dict | None:
         return None
 
 
+def _legacy_business_rate(scs: list, repeat: int = 3) -> dict:
+    """legacy 在共同子集上重复运行，业务结果通过率（分母 = len(scs)*repeat 稳定）。
+
+    P8-E：live LLM 路由（非确定性），重复中崩溃/错误**计为失败**（不排除）——legacy 的
+    偶发崩溃是其真实可靠性属性，计入分母；与 react 侧（共同子集 × 3）同分母可比。
+    """
+    g = build_runtime_graph()
+    n_ok = 0
+    detail = []
+    for sc in scs:
+        role = "customer_service" if sc["workflow"] in _CS_ROLES else "operations"
+        for rep in range(repeat):
+            thread = f"blr-{sc['scenario_id']}-{rep}"
+            sess = {"session_id": thread, "user_id": 1, "role": role, "store_id": 1}
+            try:
+                out = run_agent(g, thread, sess, question_for(sc))
+                resp = out["response"]
+            except Exception as exc:
+                detail.append({"id": sc["scenario_id"], "err": f"legacy crash: {type(exc).__name__}"})
+                continue            # 失败重复（计入分母）
+            if resp.get("status") == "error":
+                detail.append({"id": sc["scenario_id"], "err": "legacy error"})
+                continue
+            ok, _ = predicate_for(sc, facts_on=False)(resp)
+            n_ok += int(ok)
+    total = len(scs) * repeat
+    return {"run_success": f"{n_ok}/{total}", "run_rate": round(n_ok / total, 4) if total else 0.0,
+            "n": total, "failures": detail}
+
+
 def m8_report() -> dict:
     """M8 对比（P8-I4 同口径）：覆盖率（同 26 集）+ 共同可执行子集业务结果通过率。
 
@@ -102,7 +132,7 @@ def m8_report() -> dict:
     all_scs = _sc_data()
     legacy = run_legacy_m2()
     common = [sc for sc in all_scs if sc["scenario_id"] in set(legacy.get("supported_ids", []))]
-    legacy_3x = _run_legacy_scs(common, repeat=3)
+    legacy_3x = _legacy_business_rate(common, repeat=3)
     rep = _latest_report()
     react_bs = _derive_react_business(rep, [s["scenario_id"] for s in common])
     n_sc = len(all_scs)
