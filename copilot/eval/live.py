@@ -22,16 +22,21 @@ ROOT = Path(__file__).resolve().parent.parent.parent
 
 
 def metadata() -> dict:
+    # P8-I7：记录**完整 commit SHA + 工作树干净标记**（此前只记 --short，无法证明报告对应
+    # 实际运行代码——P4 报告记 cd5ed7c 但运行于未提交的 P1~P6 改动之上的教训）。
     try:
-        commit = subprocess.run(["git", "rev-parse", "--short", "HEAD"],
-                                capture_output=True, text=True, cwd=str(ROOT)).stdout.strip()
+        sha = subprocess.run(["git", "rev-parse", "HEAD"],
+                             capture_output=True, text=True, cwd=str(ROOT)).stdout.strip()
+        dirty = subprocess.run(["git", "status", "--porcelain"],
+                               capture_output=True, text=True, cwd=str(ROOT)).stdout.strip()
+        worktree = "dirty" if dirty else "clean"
     except Exception:
-        commit = ""
+        sha, worktree = "", "unknown"
     return {
         "model": "deepseek-chat", "temperature": 0,
         "prompt_version": "react.py system prompt (V1.5.3+)",
         "tool_schema_version": "v1", "dataset_version": "v1.2.3",
-        "git_commit": commit, "as_of_date": "2026-09-17",
+        "git_commit": sha, "worktree": worktree, "as_of_date": "2026-09-17",
         "timestamp": time.strftime("%Y-%m-%dT%H:%M:%S"),
         "runs_per_case": 3, "embedding_model": "bge-m3",
         "retrieval_config_version": "v1",
