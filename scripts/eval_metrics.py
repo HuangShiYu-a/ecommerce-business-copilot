@@ -47,7 +47,11 @@ def _live(repeat: int, out: str | None, only: str | None) -> int:
     from copilot.agent.graph_factory import ReactGraphFactory
 
     factory = ReactGraphFactory(checkpointer=InMemorySaver())
+    # P8-I2：三模式预热（消除 graph_factory 惰性建图冷启动对 P95 的影响），并记录到元数据
+    from copilot.eval.live import WARMUP_MODES, warmup
+    warmup(factory)
     rep: dict = {"metadata": metadata()}
+    rep["metadata"]["warmup"] = {"modes": list(WARMUP_MODES), "n": 3}
     if only in (None, "tool_sel"):
         rep["m1"] = run_live_m1(factory, repeat)
     if only in (None, "multihop"):

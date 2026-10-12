@@ -91,12 +91,26 @@ def _agg(per: list, n_cases: int, lat: list, repeat: int) -> dict:
 
 # ---- 各集 live ----
 
+# P8-I2：预热（三模式）——graph_factory 按模式惰性建图缓存，正式样本前须触发建图 +
+# 首轮 LLM 调用，否则 P95 会混入首次建图/调用冷启动耗时。
+WARMUP_MODES = ("UNSET", "CUSTOMER_SERVICE", "OPERATIONS")
+WARMUP_QUESTION = "SKU_01_NORMAL_01 库存多少"
+
+
+def warmup(factory, modes: tuple = WARMUP_MODES, n: int = 3) -> None:
+    """对目标模式各预热 n 次（真实 LLM，结果不入正式样本）。"""
+    for mode in modes:
+        for i in range(n):
+            _run_once(factory, mode, WARMUP_QUESTION, f"warm-{mode}-{i}")
+
+
 def run_live_m1(factory, repeat: int = 3) -> dict:
     cases = _load("tool_sel.yaml")
-    lat, per = [], []
+    lat, per, detail = [], [], []
     for c in cases:
         mode = c.get("mode", "UNSET")
         passes = 0
+        runs = []
         for rep in range(repeat):
             thread = f"lm1-{c['id']}-{rep}"
             resp, msgs, l = _run_once(factory, mode, c["question"], thread)
@@ -104,9 +118,15 @@ def run_live_m1(factory, repeat: int = 3) -> dict:
             r = judge_m1_plan(extract_trace(msgs), c["acceptable_plan"],
                               resp.get("status", ""), resp.get("message", ""))
             passes += int(r["exact"])
+            # P8-I3：逐用例工具调用记录（可追溯；工具集 = 实际调用序列去重）
+            runs.append({"rep": rep, "exact": bool(r["exact"]),
+                         "tools": sorted({n for n, *_ in extract_trace(msgs)})})
             cleanup_cs08()
         per.append({"id": c["id"], "passes": passes, "stable": passes == repeat})
-    return _agg(per, len(cases), lat, repeat)
+        detail.append({"id": c["id"], "runs": runs})
+    agg = _agg(per, len(cases), lat, repeat)
+    agg["detail"] = detail
+    return agg
 
 
 def run_live_m3(factory, repeat: int = 3) -> dict:
