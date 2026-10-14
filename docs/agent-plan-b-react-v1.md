@@ -142,7 +142,7 @@ pending_check → router（LLM/规则意图分类，12 枚举闭集）
 | ② Workspace Mode（Capability Profile）| 当前会话"以什么能力集工作"（UNSET / CUSTOMER_SERVICE / OPERATIONS）| **V1=UI 显式切换**（保留零预选体验）| 决定工具目录过滤 |
 | ③ Business Domain | 当前任务属于哪个业务域 | **LLM 动态判断** | 仅影响 Prompt 优先级/上下文与 capability 建议，**不承担授权** |
 
-> **诚实性声明（D9）**：V1 是单用户 Demo，**不存在生产安全授权边界**——Workspace Mode 只是"能力配置/岗位视角模拟"，用户在 UI 可自由切换，不构成 RBAC。生产设计的正确形态是：`Auth/RBAC → Permission → Tool Catalog` 在 Agent 外部完成硬过滤，LLM 无法改变。面试表述务必用此措辞，不得声称"V1 有 RBAC"。
+> **诚实性声明（D9）**：V1 是单用户 Demo，**不存在生产安全授权边界**——Workspace Mode 只是"能力配置/岗位视角模拟"，用户在 UI 可自由切换，不构成 RBAC。生产设计的正确形态是：`Auth/RBAC → Permission → Tool Catalog` 在 Agent 外部完成硬过滤，LLM 无法改变。对外表述务必用此措辞，不得声称"V1 有 RBAC"。
 
 **WorkspaceMode 正式状态（不用 None 当异常）：**
 ```
@@ -355,7 +355,7 @@ Spec 红线原文（agent-runtime-v2-spec-v1.md）：
 ### Phase 7 → G7（约 1.5h）
 - 内容：W7.1~7.2
 - **G7 核查**：文档与实现一致；grep 无死引用
-- **G7 评估**：面试叙事演练——能讲清"为什么从意图闭集走向工具调用、R4/R5/R10 如何保持"
+- **G7 评估**：技术叙事演练——能讲清"为什么从意图闭集走向工具调用、R4/R5/R10 如何保持"
 
 **总工时约 30~35h（V1.5 校准，原 24h 偏乐观）。关键路径：`4.1 spike → 2.1 react → 3.1 审批 → 2.9 capability → 4.x 测试`。Phase 2/3 为超时重灾区，预算按 1.5x 预留（W2.1+W2.8+W2.9 叠加、W3.3 全案最复杂接线）。**
 
@@ -438,7 +438,7 @@ TypeSafe AI 首款 **System One 模型**（2026-09-15 发布，HN 1679 分，当
 
 ### A.4 不引入 V1 的理由
 
-发布仅 1 周、集成包 pre-release、中间件 experimental、GitHub 已有中间件执行顺序 issue（#40694）；架构中每个候选用点当前均有更简单或更确定性的方案。**面试叙事价值**（当下最实际价值）："System One vs System Two"分层 + 五层分工（LLM 想做什么 / 决策模型是否满足条件 / Code 允不允许 / Workflow 按什么流程 / HITL 人是否授权），可用作技术选型论证样例。
+发布仅 1 周、集成包 pre-release、中间件 experimental、GitHub 已有中间件执行顺序 issue（#40694）；架构中每个候选用点当前均有更简单或更确定性的方案。**技术选型论证价值**（当下最实际价值）："System One vs System Two"分层 + 五层分工（LLM 想做什么 / 决策模型是否满足条件 / Code 允不允许 / Workflow 按什么流程 / HITL 人是否授权），可用作技术选型论证样例。
 
 ---
 

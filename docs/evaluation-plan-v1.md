@@ -21,7 +21,7 @@
 ## 0. 一句话概括
 
 在 Correctness 层（212 测试 + SC 确定性断言 + G2/G3/G5/G6）之上，新增 **Effectiveness / Performance / Safety**
-三层共 8 组指标，产出可写进简历的数字。执行：**离线 fake LLM 验证管线 → live DeepSeek 复跑出数字**
+三层共 8 组指标，产出可对外展示的量化数字。执行：**离线 fake LLM 验证管线 → live DeepSeek 复跑出数字**
 （每 case 重复 3 次，temperature=0，报告均值 + 稳定性）。
 
 ## 1. 目标与边界
@@ -40,12 +40,12 @@ P0.5   M7 Grounded Answer             Fact Support Rate + Citation Retrieval Sup
        M8 Legacy vs ReAct Baseline    Task Success / Multi-tool / Conditional Multi-hop（限定可比 case + 报 coverage）
 
 P1     nDCG / Dense-vs-Hybrid / LLM-as-judge / 复杂 Reranker / 复杂负载      ← 全部暂不做
-       顺手采集（不进简历）：Average Tool Calls per Task、Token/Cost（~15 行小改）
+       顺手采集（诊断用，不进主表）：Average Tool Calls per Task、Token/Cost（~15 行小改）
 ```
 
 ### 1.2 边界（诚实声明）
 
-- ❌ 不声称覆盖率：212 测试 ≠ code coverage，简历只能写「212 项自动化测试通过」（以 HEAD 计数为准）。
+- ❌ 不声称覆盖率：212 测试 ≠ code coverage，对外展示只能写「212 项自动化测试通过」（以 HEAD 计数为准）。
 - ❌ 不声称生产级：单用户 Demo + 合成数据，数字只代表本项目测试集。
 - ❌ V1 不做 Hybrid/Reranker/nDCG（等 Dense 结果出来若值得改进，再立对照实验）。
 - ✅ 可复现：固定 seed / 测试集 / AS_OF_DATE / live 跑法，且报告带 Reproducibility Metadata（§4）。
@@ -158,7 +158,7 @@ P1     nDCG / Dense-vs-Hybrid / LLM-as-judge / 复杂 Reranker / 复杂负载   
 - warm-up 3~5 次后再正式记录（剔除首请求连接/初始化/embed 冷启动）。
 - P95 **按 workload 各自样本池**排序算（**禁止**先按 case 平均再 P95，会压掉波动；也不跨 workload 混池）；报 N。
 - HITL 拆分：workflow case 记 `Pre-HITL`（request→interrupt）与 `Post-HITL`（resume→final）两段；**用户等待确认时间一律不算 Agent Latency**。
-- 按 workload 独立报 P50/P95（单跳 / 多工具 / 多跳 / RAG / workflow-pre-interrupt）；简历写 per-workload（M1/M2/M3 各 P95），不写单一"总体"数字（P8-I10：代码实现即 per-workload）。
+- 按 workload 独立报 P50/P95（单跳 / 多工具 / 多跳 / RAG / workflow-pre-interrupt）；对外展示写 per-workload（M1/M2/M3 各 P95），不写单一"总体"数字（P8-I10：代码实现即 per-workload）。
 
 ---
 
@@ -174,7 +174,7 @@ P1     nDCG / Dense-vs-Hybrid / LLM-as-judge / 复杂 Reranker / 复杂负载   
 
 输出四数：
 ```
-Tool Plan Exact Accuracy = 计划对 / 总数（简历主数字）
+Tool Plan Exact Accuracy = 计划对 / 总数（对外展示主数字）
 Tool Set Precision       = |C ∩ Allowed| / |C|
 Tool Set Recall          = |C ∩ Required| / |Required|
 Argument Accuracy        = case-level（一条 case 全部 required_args 键值对才记 1）；内部另报 slot-level 定位问题
@@ -195,7 +195,7 @@ Task Success =
       每条 case 可同时定义 forbidden_facts——答案含错误结论即失败）
 ```
 按 workflow 定义业务结果谓词（CS-06 / CS-08 / OP-03/04/05/07/08 / ISO，共 8 个），26 SC 全走谓词。
-内部按 workflow 拆分报告（Query/Analysis/Workflow 等）；简历只写总体 Task Success。
+内部按 workflow 拆分报告（Query/Analysis/Workflow 等）；对外展示只写总体 Task Success。
 **Final Answer Fidelity 用 required_facts 结构化匹配，不上 LLM-judge**（与 eval_g5 GOLD_KWS 同模式）。
 **谓词范围说明（P8-I6）**：UNDETERMINED 分支（CS-06/OP-04/OP-05/OP-08）= 出现 `error_code` 或
 UNDETERMINED/None 即通过（等价"未定"，**不校验具体缺因**——SC 的 `expected_reason` 为语义参考）；
@@ -233,7 +233,7 @@ Conflict Resolution Accuracy = 检索返回 RULE_CONFLICT / RULE_CONFLICT 条数
 E2E P50 / P95（**per-workload samples**，报 N；warm-up 后；warm/cached graph，graph build 不计入）
 Pre-HITL / Post-HITL 分段（workflow case）
 ```
-另采集（诊断，不进简历）：`Average Tool Calls per Task`、Token 用量（P1 顺手）。
+另采集（诊断，不进主表）：`Average Tool Calls per Task`、Token 用量（P1 顺手）。
 
 ### 3.6 M6 Safety / Guardrail
 
@@ -245,7 +245,7 @@ Approval Bypass Rate        = 未确认就执行 Action / 需 HITL 的 Action（
 Missing-slot Hallucination  = 缺关键参数却编造标识符 / 缺参数 case（期望 0%）
 ```
 越权拦截由运行时结构保证（react.py tools_node 对目录外工具返回 `工具不在当前目录`），所以
-Execution=0% 是**架构强制 + 测试证据**，不是 LLM 自觉。这是简历安全一栏最有力的数字。
+Execution=0% 是**架构强制 + 测试证据**，不是 LLM 自觉。这是安全评测最有力的数字。
 
 **两个实验来源（防 Block/Execution 出现 0/0 无法解释）**：
 - **A. 结构性安全测试**（确定性，离线）：fake LLM **强制**发起目录外工具调用 → 验 Block Rate /
@@ -278,7 +278,7 @@ Multi-tool             N/A       measured(M1)
 ```
 - **业务结果通过率同分母**（共同 legacy 可执行子集 × 3；legacy 3× 重跑中偶发崩溃计为失败，不排除，`_legacy_business_rate`）；**react 侧由官方 M2 全谓词报告推导**（facts_on=True ⊇ facts_on=False，更严——M2 26 SC × 3 全过 ⇒ 共同子集业务结果必然全过，未做独立 facts_on=False 重跑）。
 - 意义：为"为什么从 Router 改成 Tool-Orchestrator"提供同一 benchmark 上的量化证据。
-- **结构性不支持的能力标 N/A，不标 0%**（legacy 无条件多跳 ≠ "尝试 100 次全失败"，是架构无此能力；面试措辞用"N/A"）。
+- **结构性不支持的能力标 N/A，不标 0%**（legacy 无条件多跳 ≠ "尝试 100 次全失败"，是架构无此能力；对外表述用"N/A"）。
 - 风险：legacy live LLM 路由非确定性（coverage 22~23/26 波动），数字取最新报告实测、如实标注。
 - 表述纪律：只说"同一业务测试集与模型条件下新旧系统对比"，不宣称"实验证明 ReAct 架构导致成功率提升"（prompt/架构同时变，非严格因果实验）。
 
@@ -331,7 +331,7 @@ scripts/eval_metrics.py
 | 3 | M2 每 workflow 业务结果谓词（8 个）+ M6 安全判定表 | 0.5 天 |
 | 4 | scripts/eval_metrics.py（offline/live + 判定 + 报告 + metadata） | 1.5~2 天 |
 | 5 | react.py latency 埋点（+ token 采集 P1） | 0.5h |
-| 6 | 报告 JSON + README 指标表 + 简历回填 | 0.5 天 |
+| 6 | 报告 JSON + README 指标表 + 对外展示回填 | 0.5 天 |
 | — | **合计** | **约 4~5 天** |
 
 ## 7. 风险
@@ -346,13 +346,7 @@ scripts/eval_metrics.py
 | 低 | live 冷启动污染 P95 | warm-up 3~5 次 + 冷启动样本剔除另报 |
 | 低 | 数据污染（T-X-01 建单） | 幂等键内建 + 跑后清理（eval_g3 同法） |
 
-## 8. 简历最终选数（从冻结指标中挑 4~6 个）
-
-优先：**Tool Plan Accuracy / Task Success / Conditional Multi-hop Success / RAG Hit@5 / E2E P95**，
-第六个在 **Grounded Answer** 与 **Unauthorized Execution = 0%** 中选一。
-README 分四层展示：Correctness（212 tests）/ Effectiveness（M1~M4, M7）/ Performance（M5）/ Safety（M6）。
-
-## 9. 修订记录
+## 8. 修订记录
 
 | 版本 | 日期 | 说明 |
 |---|---|---|

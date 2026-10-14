@@ -10,7 +10,7 @@
 - Multi-tool / Conditional Multi-hop：legacy 结构性不支持（1 intent/轮、无 observation 驱动
   深挖）→ 标 N/A，ReAct 侧取 M1 multi_tool + M3 实测
 - ReAct 侧数字读取最新提交的 live 报告（reports/eval_metrics_*.json），不硬编码占位
-  （D-1：README/简历数字必须有报告背书）。
+  （D-1：README/对外展示数字必须有报告背书）。
 """
 from __future__ import annotations
 

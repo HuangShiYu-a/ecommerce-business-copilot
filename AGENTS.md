@@ -9,7 +9,7 @@
 
 - **项目**：E-commerce Business Copilot（电商智能客服与运营决策 Copilot）
 - **定位**：面向内部客服 / 运营的 Business Copilot；V1 不做 C 端客服
-- **用途**：实习向 Agent 工程实操项目（边学边做）
+- **用途**：Agent 工程实操项目（边学边做）
 - **已冻结基线文档**（未经用户批准不得擅自改写核心定义）：
   - `docs/business-scenarios-v1.md`（Business Baseline，V1.1 已定稿）
   - `docs/core-tool-design-v1.md`（Tool Contract，**V1.1 Frozen**）
@@ -59,7 +59,7 @@
 ## 2. Project Goal
 
 1. 交付可演示的 Agent 系统（Tool Calling、确定性计算、HITL、事实与规则分离等）。
-2. 使用户能向面试官讲清：**为什么这样设计**，而不只是仓库里有代码。
+2. 使用户能讲清：**为什么这样设计**，而不只是仓库里有代码。
 3. 采用 AI-assisted engineering：AI 可大量写实现代码，用户负责设计责任与验证。
 
 ---
@@ -343,4 +343,4 @@ AI 必须：
 2. **改共享文件前对齐**：动 `react.py` / `sc_runner.py` / `data/scenarios/eval/scenarios.yaml` / `scripts/eval_*.py` 等两窗口共用文件前，先 `git status` 确认无对方未提交改动。
 3. **语义变更先通报**：业务语义变更（如 CS-08 already_exists / H2 在途超期 / M1 慢销口径）须先在跨窗口协调文档 `docs/coordination-fix-eval-alignment-v1.md` 通报，再改评估假设 / 冻结文档。
 4. **冻结文件双方不碰**：`data/scenarios/eval/scenarios.yaml`、`data/eval-cases/rag_gold_v1.yaml` 任何窗口都不改。
-5. **数字口径动态化**：报告 / 简历里的测试计数写「当前 HEAD 的 pytest 实数」，不硬编码（当前 212）。
+5. **数字口径动态化**：报告里的测试计数写「当前 HEAD 的 pytest 实数」，不硬编码（当前 212）。
